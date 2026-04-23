@@ -14,10 +14,8 @@ except ImportError:  # pragma: no cover - package-style import fallback
     from src.player_search import find_player_by_name
     from src.search_service import search_players
 
-# ── AI toggle ────────────────────────────────────────────────────────────────
-USE_LLM = False
-# USE_LLM = True
-# ─────────────────────────────────────────────────────────────────────────────
+
+USE_LLM = True
 
 
 def register_routes(app):
