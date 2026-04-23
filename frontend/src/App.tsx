@@ -83,6 +83,7 @@ interface SearchResponse {
   results: PlayerStats[];
 }
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
+type SearchMode = string | null;
 
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
@@ -104,6 +105,7 @@ function App(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [status, setStatus] = useState<SearchStatus>("idle");
+  const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -180,6 +182,7 @@ function App(): JSX.Element {
     }
     scrollToShell();
     setStatus("loading");
+    setSearchMode(null);
     try {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
@@ -191,6 +194,7 @@ function App(): JSX.Element {
       const nextPlayers = toCardData(Array.isArray(data.results) ? data.results : []);
       setPlayers(nextPlayers);
       setStatus(nextPlayers.length > 0 ? "populated" : "empty");
+      setSearchMode(data.results[0]?.search_mode ?? null);
     } catch {
       setPlayers([]);
       setStatus("error");
@@ -365,6 +369,23 @@ function App(): JSX.Element {
                       >
                         {statusText}
                       </motion.p>
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence>
+                    {searchMode?.toLowerCase().includes("svd") && status === "populated" && (
+                      <motion.div
+                        className="svd-badge"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.26, ease: "easeOut" }}
+                      >
+                        <span className="svd-badge-icon">✦</span>
+                        <span className="svd-badge-label">Query upgraded</span>
+                        <span className="svd-badge-sep">·</span>
+                        <span className="svd-badge-desc">SVD enhanced matching</span>
+                      </motion.div>
                     )}
                   </AnimatePresence>
 

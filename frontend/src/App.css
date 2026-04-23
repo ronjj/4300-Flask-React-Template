@@ -330,6 +330,45 @@
   font-size: 15px;
 }
 
+.svd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 2px;
+  padding: 7px 16px 7px 12px;
+  border-radius: 999px;
+  background: rgba(131, 193, 167, 0.13);
+  border: 1px solid rgba(131, 193, 167, 0.38);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 0 1px rgba(131, 193, 167, 0.10) inset;
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+.svd-badge-icon {
+  color: #83C1A7;
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.svd-badge-label {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+
+.svd-badge-sep {
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 400;
+}
+
+.svd-badge-desc {
+  color: #83C1A7;
+  font-weight: 500;
+}
+
 .player-grid {
   width: min(1000px, 96vw);
   margin: 18px auto 0;
