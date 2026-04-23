@@ -36,7 +36,7 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
     const track = trackRef.current;
     if (!track) return;
 
-    const speed = 0.25; // px per frame
+    const speed = 0.25;
 
     const step = () => {
       if (!pausedRef.current) {
@@ -115,13 +115,11 @@ function App(): JSX.Element {
         const data: { use_llm?: boolean } = await response.json();
         setUseLlm(Boolean(data.use_llm));
       } catch {
-        // if config fails, keep useLlm = false and continue rendering UI
       }
     };
     void loadConfig();
   }, []);
 
-  // Escape key closes the hero overlay
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && heroMode) setHeroMode(false);
@@ -130,21 +128,16 @@ function App(): JSX.Element {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [heroMode]);
 
-  // Lock page scroll while the hero overlay is open
   useEffect(() => {
     document.body.style.overflow = heroMode ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [heroMode]);
 
-  // Scroll-driven welcome → header logo morph
   const { scrollY } = useScroll();
   const vh = window.innerHeight;
-  // Over the first 65% of the welcome section height the logo shrinks toward the header
   const heroLogoScale   = useTransform(scrollY, [0, vh * 0.65], [1, 0.26]);
   const heroLogoOpacity = useTransform(scrollY, [vh * 0.38, vh * 0.65], [1, 0]);
-  // Drift left so the shrinking logo converges on the header logo's horizontal position
   const heroLogoX       = useTransform(scrollY, [0, vh * 0.65], [0, -70]);
-  // Header logo fades in as the welcome logo fades out
   const headerLogoOpacity = useTransform(scrollY, [vh * 0.5, vh * 0.85], [0, 1]);
 
   const scrollToShell = (): void => {
@@ -187,7 +180,6 @@ function App(): JSX.Element {
     return "home";
   }, [players.length, status]);
 
-  // Opening the hero is how the user "focuses" the search bar from feature tiles
   const focusSearch = (): void => {
     scrollToShell();
     setHeroMode(true);
@@ -210,7 +202,6 @@ function App(): JSX.Element {
   return (
     <LayoutGroup>
       <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
-        {/* ── Welcome screen ── */}
         <motion.main
           className="welcome"
           initial={{ opacity: 0, y: 12 }}
@@ -218,7 +209,6 @@ function App(): JSX.Element {
           transition={{ duration: 0.22, ease: "easeOut" }}
         >
           <div className="welcome-content">
-            {/* Logo shrinks toward the header position as the user scrolls down */}
             <motion.div
               style={{
                 scale: heroLogoScale,
@@ -234,7 +224,6 @@ function App(): JSX.Element {
           </div>
         </motion.main>
 
-        {/* ── App shell (navbar + content) ── */}
         <motion.main
           className="app-shell"
           ref={shellRef}
@@ -244,12 +233,10 @@ function App(): JSX.Element {
         >
           <header className="app-header">
             <div className="header-inner">
-              {/* Fades in as the welcome logo finishes its scroll-out animation */}
               <motion.div style={{ opacity: headerLogoOpacity }}>
                 <Logo className="logo-header" />
               </motion.div>
               <div className="header-search">
-                {/* Search bar lives here when NOT in hero mode */}
                 {!heroMode ? (
                   <motion.div layoutId="main-search">
                     <SearchBar
@@ -262,7 +249,6 @@ function App(): JSX.Element {
                     />
                   </motion.div>
                 ) : (
-                  // invisible ghost keeps header layout stable while search is in overlay
                   <div className="search-bar-ghost" aria-hidden="true" />
                 )}
               </div>
@@ -331,8 +317,6 @@ function App(): JSX.Element {
           </section>
         </motion.main>
 
-        {/* ── Hero / IR overlay ── */}
-        {/* Click the search bar to open; search bar morphs from navbar to center via layoutId */}
         <AnimatePresence>
           {heroMode && (
             <motion.div
@@ -344,7 +328,6 @@ function App(): JSX.Element {
               onClick={() => setHeroMode(false)}
             >
               <div className="hero-overlay-inner" onClick={(e) => e.stopPropagation()}>
-                {/* Logo grows back to centered position */}
                 <motion.div
                   className="hero-logo-wrapper"
                   initial={{ opacity: 0, scale: 0.88 }}
@@ -355,8 +338,6 @@ function App(): JSX.Element {
                   <Logo className="logo-hero" />
                 </motion.div>
 
-                {/* Search bar: same layoutId as the navbar version — Framer Motion
-                    animates it from the header position to this centered position */}
                 <motion.div layoutId="main-search">
                   <SearchBar
                     value={searchTerm}
@@ -370,7 +351,6 @@ function App(): JSX.Element {
                   />
                 </motion.div>
 
-                {/* Query chips stagger in from below the search bar */}
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}

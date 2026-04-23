@@ -1,10 +1,3 @@
-/**
- * Chat component — only rendered when USE_LLM = True in routes.py.
- *
- * Shows a message history and a chat input bar at the bottom.
- * When the backend returns a search_term event, it calls onSearchTerm
- * to update the search bar and results above.
- */
 import { useState, useRef, useEffect } from 'react'
 import SearchIcon from './assets/mag.png'
 
@@ -89,7 +82,6 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
               if (data.search_term !== undefined) {
                 onSearchTerm(data.search_term)
               }
-              // Any valid SSE event means the backend is alive.
               resetInactivityTimer(120000)
               if (data.error) {
                 setMessages(prev => [...prev.slice(0, -1), { text: 'Error: ' + data.error, isUser: false }])
@@ -99,7 +91,7 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
                 assistantText += data.content
                 setMessages(prev => [...prev.slice(0, -1), { text: assistantText, isUser: false }])
               }
-            } catch { /* ignore malformed lines */ }
+            } catch {}
           }
         }
       }

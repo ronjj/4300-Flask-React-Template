@@ -277,7 +277,6 @@
   cursor: not-allowed;
 }
 
-/* Query carousel */
 .query-carousel-wrapper {
   width: min(720px, 92vw);
   margin: 20px auto 0;
@@ -344,13 +343,11 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
-/* Framer Motion stagger wrapper — keeps cards filling their grid cell */
 .player-card-motion {
   display: flex;
   flex-direction: column;
 }
 
-/* Full-bleed background image */
 .player-image {
   position: absolute;
   inset: 0;
@@ -361,7 +358,6 @@
   display: block;
 }
 
-/* Gradient overlay: dark at top for name legibility, dark at bottom for stats */
 .player-card-overlay {
   position: absolute;
   inset: 0;
@@ -374,7 +370,6 @@
   );
 }
 
-/* All text content sits above the overlay */
 .player-card-content {
   position: relative;
   z-index: 1;
@@ -412,7 +407,6 @@
   margin: 0;
 }
 
-/* Stats pushed to the bottom via flex */
 .player-stats {
   flex: 1;
   display: flex;
@@ -465,7 +459,6 @@
   filter: brightness(0.9);
 }
 
-/* LLM mode and chat */
 .llm-mode .player-grid {
   margin-bottom: 8px;
 }
@@ -602,7 +595,6 @@
   cursor: not-allowed;
 }
 
-/* Responsive */
 @media (max-width: 980px) {
   .player-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -642,17 +634,12 @@
   }
 }
 
-/* ── Hero overlay ─────────────────────────────────────────────── */
-
-/* Invisible placeholder that keeps the header layout stable while
-   the real search bar is animating in the hero overlay */
 .search-bar-ghost {
   width: min(720px, 92vw);
   height: 64px;
   flex-shrink: 0;
 }
 
-/* Full-screen hero — opens when the user clicks the navbar search bar */
 .hero-overlay {
   position: fixed;
   inset: 0;
@@ -663,10 +650,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer; /* clicking outside the inner panel closes the overlay */
+  cursor: pointer;
 }
 
-/* Soccerpitch faint watermark — mirrors the welcome section feel */
 .hero-overlay::before {
   content: "";
   position: absolute;
@@ -683,7 +669,6 @@
   z-index: 0;
 }
 
-/* Inner panel — stops click-to-close from firing on content */
 .hero-overlay-inner {
   position: relative;
   z-index: 1;
@@ -697,7 +682,6 @@
   cursor: default;
 }
 
-/* Logo in hero — bigger than the navbar version */
 .hero-logo-wrapper .logo-image {
   height: 68px;
   margin: 0 0 4px;
