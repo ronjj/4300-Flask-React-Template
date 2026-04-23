@@ -4,8 +4,60 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: radial-gradient(circle, #00B368 30%, #009657);
-  padding: 150px 24px 40px;
+  background: #2F7C5C;
+  padding: 0;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.app-shell,
+.welcome {
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(72px, 14vh, 150px) 0 40px;
+}
+
+.welcome::before {
+  content: "";
+  position: absolute;
+  inset: -6% -6%;
+  background-image: url("./assets/soccerpitch.svg");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.32;
+  pointer-events: none;
+  transform: scale(0.90);
+  transform-origin: center;
+  mix-blend-mode: screen;
+  filter: brightness(1.35) contrast(1.15);
+  z-index: 0;
+}
+
+.welcome-content {
+  position: relative;
+  z-index: 1;
+  width: min(1100px, 96vw);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.tagline {
+  margin: 0 0 28px;
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: clamp(20px, 2.4vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .top-text {
@@ -20,6 +72,113 @@
   height: auto;
   display: block;
   margin: 0 auto 40px;
+}
+
+.logo-image.logo-hero {
+  margin: 0 0 18px;
+  opacity: 0.85;
+}
+
+.logo-image.logo-header {
+  margin: 0;
+  height: 30px;
+  opacity: 0.75;
+}
+
+.app-header {
+  width: 100%;
+  padding: 18px 24px 14px;
+  background: rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.header-inner {
+  width: min(1240px, 96vw);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.header-search {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.header-search .search-bar {
+  width: min(720px, 92vw);
+}
+
+.content {
+  width: min(1240px, 96vw);
+  margin: 26px auto 0;
+  padding-bottom: 40px;
+}
+
+.feature-tiles {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(18px, 2.5vw, 40px);
+}
+
+.feature-tile {
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  padding: 22px 24px 20px;
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.14);
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.feature-tile:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.tile-icon {
+  width: 44px;
+  height: 44px;
+  opacity: 0.55;
+  margin-bottom: 14px;
+}
+
+.tile-title {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.tile-subtitle {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.popular-section {
+  margin-top: 30px;
+}
+
+.section-title {
+  margin: 18px 0 10px;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
 .search-bar {
@@ -67,7 +226,7 @@
   border: none;
   outline: none;
   background: transparent;
-  font-family: "SF Pro Display", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-size: clamp(15px, 1.9vw, 20px);
   color: #193F2F;
   letter-spacing: -0.01em;
@@ -111,7 +270,7 @@
 /* Query carousel */
 .query-carousel-wrapper {
   width: min(720px, 92vw);
-  margin-top: 16px;
+  margin: 20px auto 0;
   overflow: hidden;
   mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
   -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
@@ -132,7 +291,7 @@
   border: 1.5px solid rgba(255, 255, 255, 0.45);
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
-  font-family: "SF Pro Display", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -151,13 +310,13 @@
 .search-feedback {
   margin-top: 14px;
   color: #ffffff;
-  font-family: "SF Pro Display", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-size: 15px;
 }
 
 .player-grid {
   width: min(1240px, 96vw);
-  margin: 92px auto 0;
+  margin: 18px auto 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(360px, 1fr));
   gap: clamp(24px, 3vw, 72px);
@@ -229,7 +388,7 @@
 
 .player-name {
   color: #00B26E;
-  font-family: "SF Pro Display";
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-size: 22px;
   font-weight: 600;
   line-height: 1.2;
@@ -238,7 +397,7 @@
 
 .player-team {
   color: #00B26E;
-  font-family: "SF Pro Display";
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-size: 15px;
   font-weight: 500;
   line-height: normal;
@@ -280,7 +439,7 @@
   font-size: clamp(12px, 1.4vw, 18px);
   line-height: 1.1;
   cursor: pointer;
-  font-family: "SF Pro Display", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -313,7 +472,7 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: "SF Pro Display", "Open Sans", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-size: 0.95rem;
   line-height: 1.45;
   padding: 10px 12px;
@@ -399,7 +558,7 @@
   font-size: 15px;
   border: none;
   outline: 0;
-  font-family: "SF Pro Display", "Open Sans", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   background: transparent;
   color: #214035;
 }
@@ -413,7 +572,7 @@
   background: #10b974;
   color: #fff;
   cursor: pointer;
-  font-family: "SF Pro Display", "Open Sans", sans-serif;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-weight: 600;
 }
 
@@ -431,11 +590,23 @@
   .player-grid {
     grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
+
+  .feature-tiles {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
-  .full-body-container {
-    padding-top: 38px;
+  .app-header {
+    padding: 14px 14px 12px;
+  }
+
+  .header-inner {
+    gap: 12px;
+  }
+
+  .logo-image.logo-header {
+    height: 26px;
   }
 
   .search-bar {
