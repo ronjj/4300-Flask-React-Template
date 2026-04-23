@@ -9,16 +9,20 @@ type SearchBarProps = {
     disabled?: boolean;
     className?: string;
     inputRef?: Ref<HTMLInputElement>;
+    onFocus?: () => void;
+    autoFocus?: boolean;
 }
 
-function SearchBar({ 
-    value, 
-    onChange, 
-    onSubmit, 
-    placeholder = "look up the best Brazilian wingers...", 
+function SearchBar({
+    value,
+    onChange,
+    onSubmit,
+    placeholder = "look up the best Brazilian wingers...",
     disabled = false,
     className = "",
     inputRef,
+    onFocus,
+    autoFocus = false,
 }: SearchBarProps): JSX.Element {
         const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
             event.preventDefault();
@@ -37,6 +41,8 @@ function SearchBar({
                 autoComplete="off"
                 aria-label="Search players"
                 ref={inputRef}
+                onFocus={onFocus}
+                autoFocus={autoFocus}
             />
             <button className="search-bar-btn" type="submit" disabled={disabled} aria-label="Submit search">
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">

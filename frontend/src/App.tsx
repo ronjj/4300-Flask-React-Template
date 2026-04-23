@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion, useScroll, useTransform } from "framer-motion";
 import "./App.css";
 import Chat from "./Chat";
 import Logo from "./components/Logo";
@@ -76,12 +76,14 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
     </div>
   );
 }
+
 // for stef to run deployed backend locally
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 interface SearchResponse {
   results: PlayerStats[];
 }
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
+
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
     key: `${player.name}-${player.team ?? "unknown"}-${player.league ?? "unknown"}`,
@@ -95,13 +97,16 @@ function toCardData(results: PlayerStats[]): PlayerCardData[] {
     image: player.image,
   }));
 }
+
 function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [status, setStatus] = useState<SearchStatus>("idle");
+  const [heroMode, setHeroMode] = useState<boolean>(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const loadConfig = async (): Promise<void> => {
       try {
@@ -115,6 +120,32 @@ function App(): JSX.Element {
     };
     void loadConfig();
   }, []);
+
+  // Escape key closes the hero overlay
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && heroMode) setHeroMode(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [heroMode]);
+
+  // Lock page scroll while the hero overlay is open
+  useEffect(() => {
+    document.body.style.overflow = heroMode ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [heroMode]);
+
+  // Scroll-driven welcome → header logo morph
+  const { scrollY } = useScroll();
+  const vh = window.innerHeight;
+  // Over the first 65% of the welcome section height the logo shrinks toward the header
+  const heroLogoScale   = useTransform(scrollY, [0, vh * 0.65], [1, 0.26]);
+  const heroLogoOpacity = useTransform(scrollY, [vh * 0.38, vh * 0.65], [1, 0]);
+  // Drift left so the shrinking logo converges on the header logo's horizontal position
+  const heroLogoX       = useTransform(scrollY, [0, vh * 0.65], [0, -70]);
+  // Header logo fades in as the welcome logo fades out
+  const headerLogoOpacity = useTransform(scrollY, [vh * 0.5, vh * 0.85], [0, 1]);
 
   const scrollToShell = (): void => {
     shellRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -145,6 +176,7 @@ function App(): JSX.Element {
       setStatus("error");
     }
   };
+
   const handleChatSearch = (term: string): void => {
     setSearchTerm(term);
     void runSearch(term);
@@ -155,9 +187,10 @@ function App(): JSX.Element {
     return "home";
   }, [players.length, status]);
 
+  // Opening the hero is how the user "focuses" the search bar from feature tiles
   const focusSearch = (): void => {
     scrollToShell();
-    searchInputRef.current?.focus();
+    setHeroMode(true);
   };
 
   const statusText =
@@ -169,113 +202,196 @@ function App(): JSX.Element {
           ? "Could not load results. Please try again."
           : null;
 
+  const handleSearchChange = (nextValue: string): void => {
+    setSearchTerm(nextValue);
+    if (status !== "idle") setStatus("idle");
+  };
+
   return (
-    <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
-      <motion.main
-        className="welcome"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.22, ease: "easeOut" }}
-      >
-        <div className="welcome-content">
-          <Logo className="logo-hero" />
-          <p className="tagline">World Class Results, Every Time.</p>
-        </div>
-      </motion.main>
-
-      <motion.main
-        className="app-shell"
-        ref={shellRef}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-      >
-        <header className="app-header">
-          <div className="header-inner">
-            <Logo className="logo-header" />
-            <div className="header-search">
-              <SearchBar
-                value={searchTerm}
-                inputRef={searchInputRef}
-                onChange={(nextValue) => {
-                  setSearchTerm(nextValue);
-                  if (status !== "idle") setStatus("idle");
-                }}
-                onSubmit={() => void runSearch(searchTerm)}
-                placeholder="look up the best Brazilian wingers..."
-              />
-            </div>
+    <LayoutGroup>
+      <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
+        {/* ── Welcome screen ── */}
+        <motion.main
+          className="welcome"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+        >
+          <div className="welcome-content">
+            {/* Logo shrinks toward the header position as the user scrolls down */}
+            <motion.div
+              style={{
+                scale: heroLogoScale,
+                opacity: heroLogoOpacity,
+                x: heroLogoX,
+                originX: 0,
+                originY: 0,
+              }}
+            >
+              <Logo className="logo-hero" />
+            </motion.div>
+            <p className="tagline">World Class Results, Every Time.</p>
           </div>
-        </header>
+        </motion.main>
 
-        <section className="content">
-          <AnimatePresence mode="wait" initial={false}>
-            {shellMode === "home" ? (
-              <motion.div
-                key="home"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}
-              >
-                <div className="feature-tiles">
-                  <button type="button" className="feature-tile" onClick={focusSearch}>
-                    <img src={searchSvg} alt="" aria-hidden="true" className="tile-icon" />
-                    <h3 className="tile-title">Search</h3>
-                    <p className="tile-subtitle">Type a player name or describe what you're looking for</p>
-                  </button>
-                  <button type="button" className="feature-tile" onClick={focusSearch}>
-                    <img src={soccerballSvg} alt="" aria-hidden="true" className="tile-icon" />
-                    <h3 className="tile-title">Discover</h3>
-                    <p className="tile-subtitle">Get ranked results with key stats</p>
-                  </button>
-                  <button type="button" className="feature-tile" onClick={focusSearch}>
-                    <img src={compassSvg} alt="" aria-hidden="true" className="tile-icon" />
-                    <h3 className="tile-title">Explore</h3>
-                    <p className="tile-subtitle">Dive into full player profiles</p>
-                  </button>
-                </div>
-
-                <div className="popular-section">
-                  <h2 className="section-title">Popular Players</h2>
-                  <PlayerGrid players={POPULAR_PLAYERS} />
-                </div>
+        {/* ── App shell (navbar + content) ── */}
+        <motion.main
+          className="app-shell"
+          ref={shellRef}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+        >
+          <header className="app-header">
+            <div className="header-inner">
+              {/* Fades in as the welcome logo finishes its scroll-out animation */}
+              <motion.div style={{ opacity: headerLogoOpacity }}>
+                <Logo className="logo-header" />
               </motion.div>
-            ) : (
-              <motion.div
-                key="results"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-              >
-                <QueryCarousel onSelect={(q) => {
-                  setSearchTerm(q);
-                  void runSearch(q);
-                }} />
+              <div className="header-search">
+                {/* Search bar lives here when NOT in hero mode */}
+                {!heroMode ? (
+                  <motion.div layoutId="main-search">
+                    <SearchBar
+                      value={searchTerm}
+                      inputRef={searchInputRef}
+                      onFocus={() => { scrollToShell(); setHeroMode(true); }}
+                      onChange={handleSearchChange}
+                      onSubmit={() => void runSearch(searchTerm)}
+                      placeholder="look up the best Brazilian wingers..."
+                    />
+                  </motion.div>
+                ) : (
+                  // invisible ghost keeps header layout stable while search is in overlay
+                  <div className="search-bar-ghost" aria-hidden="true" />
+                )}
+              </div>
+            </div>
+          </header>
 
-                <AnimatePresence>
-                  {statusText && (
-                    <motion.p
-                      className="search-feedback"
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.18, ease: "easeOut" }}
-                    >
-                      {statusText}
-                    </motion.p>
-                  )}
-                </AnimatePresence>
+          <section className="content">
+            <AnimatePresence mode="wait" initial={false}>
+              {shellMode === "home" ? (
+                <motion.div
+                  key="home"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
+                >
+                  <div className="feature-tiles">
+                    <button type="button" className="feature-tile" onClick={focusSearch}>
+                      <img src={searchSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <h3 className="tile-title">Search</h3>
+                      <p className="tile-subtitle">Type a player name or describe what you're looking for</p>
+                    </button>
+                    <button type="button" className="feature-tile" onClick={focusSearch}>
+                      <img src={soccerballSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <h3 className="tile-title">Discover</h3>
+                      <p className="tile-subtitle">Get ranked results with key stats</p>
+                    </button>
+                    <button type="button" className="feature-tile" onClick={focusSearch}>
+                      <img src={compassSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <h3 className="tile-title">Explore</h3>
+                      <p className="tile-subtitle">Dive into full player profiles</p>
+                    </button>
+                  </div>
 
-                <PlayerGrid players={players} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </section>
-      </motion.main>
-      {useLlm && <Chat onSearchTerm={handleChatSearch} />}
-    </div>
+                  <div className="popular-section">
+                    <h2 className="section-title">Popular Players</h2>
+                    <PlayerGrid players={POPULAR_PLAYERS} />
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="results"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
+                  <AnimatePresence>
+                    {statusText && (
+                      <motion.p
+                        className="search-feedback"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.18, ease: "easeOut" }}
+                      >
+                        {statusText}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
+
+                  <PlayerGrid players={players} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+        </motion.main>
+
+        {/* ── Hero / IR overlay ── */}
+        {/* Click the search bar to open; search bar morphs from navbar to center via layoutId */}
+        <AnimatePresence>
+          {heroMode && (
+            <motion.div
+              className="hero-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              onClick={() => setHeroMode(false)}
+            >
+              <div className="hero-overlay-inner" onClick={(e) => e.stopPropagation()}>
+                {/* Logo grows back to centered position */}
+                <motion.div
+                  className="hero-logo-wrapper"
+                  initial={{ opacity: 0, scale: 0.88 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.92 }}
+                  transition={{ duration: 0.28, ease: "easeOut" }}
+                >
+                  <Logo className="logo-hero" />
+                </motion.div>
+
+                {/* Search bar: same layoutId as the navbar version — Framer Motion
+                    animates it from the header position to this centered position */}
+                <motion.div layoutId="main-search">
+                  <SearchBar
+                    value={searchTerm}
+                    autoFocus
+                    onChange={handleSearchChange}
+                    onSubmit={() => {
+                      setHeroMode(false);
+                      void runSearch(searchTerm);
+                    }}
+                    placeholder="look up the best Brazilian wingers..."
+                  />
+                </motion.div>
+
+                {/* Query chips stagger in from below the search bar */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.26, delay: 0.16, ease: "easeOut" }}
+                >
+                  <QueryCarousel onSelect={(q) => {
+                    setSearchTerm(q);
+                    setHeroMode(false);
+                    void runSearch(q);
+                  }} />
+                </motion.div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {useLlm && <Chat onSearchTerm={handleChatSearch} />}
+      </div>
+    </LayoutGroup>
   );
 }
+
 export default App;

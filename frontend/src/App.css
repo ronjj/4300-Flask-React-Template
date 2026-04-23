@@ -7,7 +7,7 @@
   background: #2F7C5C;
   padding: 0;
   position: relative;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .app-shell,
@@ -91,6 +91,9 @@
   background: rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .header-inner {
@@ -119,22 +122,29 @@
 }
 
 .feature-tiles {
-  margin-top: 24px;
+  margin-top: 64px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(18px, 2.5vw, 40px);
+  column-gap: clamp(28px, 5vw, 72px);
+  row-gap: clamp(20px, 3vw, 40px);
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .feature-tile {
   border: none;
   background: rgba(255, 255, 255, 0.14);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 18px;
-  padding: 22px 24px 20px;
-  text-align: left;
+  border-radius: 20px;
+  padding: 36px 24px 32px;
+  text-align: center;
   cursor: pointer;
   backdrop-filter: blur(6px);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.14);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
@@ -145,18 +155,18 @@
 }
 
 .tile-icon {
-  width: 44px;
-  height: 44px;
+  width: 68px;
+  height: 68px;
   opacity: 0.55;
-  margin-bottom: 14px;
+  margin-bottom: 20px;
 }
 
 .tile-title {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   color: rgba(255, 255, 255, 0.9);
   font-family: "Google Sans", "Open Sans", sans-serif;
-  font-size: 20px;
-  font-weight: 650;
+  font-size: 24px;
+  font-weight: 700;
   letter-spacing: -0.01em;
 }
 
@@ -164,21 +174,21 @@
   margin: 0;
   color: rgba(255, 255, 255, 0.55);
   font-family: "Google Sans", "Open Sans", sans-serif;
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .popular-section {
-  margin-top: 30px;
+  margin-top: 48px;
 }
 
 .section-title {
-  margin: 18px 0 10px;
-  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 20px;
+  color: #ffffff;
   font-family: "Google Sans", "Open Sans", sans-serif;
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
+  font-size: clamp(24px, 2.8vw, 36px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .search-bar {
@@ -242,7 +252,7 @@
   height: 44px;
   border-radius: 50%;
   border: none;
-  background: #10b974;
+  background: #83C1A7;
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -315,137 +325,144 @@
 }
 
 .player-grid {
-  width: min(1240px, 96vw);
+  width: min(1000px, 96vw);
   margin: 18px auto 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(360px, 1fr));
-  gap: clamp(24px, 3vw, 72px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: clamp(24px, 4vw, 56px);
+  row-gap: clamp(20px, 3vw, 36px);
   align-items: stretch;
 }
 
 .player-card {
-  background: #FAFAF8;
-  border-radius: 18px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  padding: 14px;
-  min-height: 434px;
-  padding-bottom: 24px;
-  animation: fadeInUp 0.6s ease both;
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  min-height: 376px;
+  height: 100%;
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(40px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Framer Motion stagger wrapper — keeps cards filling their grid cell */
+.player-card-motion {
+  display: flex;
+  flex-direction: column;
 }
 
+/* Full-bleed background image */
+.player-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
 
-/* Stagger card animations */
-.player-card:nth-child(1) { animation-delay: 0.15s; }
-.player-card:nth-child(2) { animation-delay: 0.3s; }
-.player-card:nth-child(3) { animation-delay: 0.45s; }
-.player-card:nth-child(4) { animation-delay: 0.60s; }
-.player-card:nth-child(5) { animation-delay: 0.75s; }
-.player-card:nth-child(6) { animation-delay: 0.9s; }
+/* Gradient overlay: dark at top for name legibility, dark at bottom for stats */
+.player-card-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.56) 0%,
+    rgba(0, 0, 0, 0.2) 36%,
+    rgba(0, 0, 0, 0.72) 62%,
+    rgba(0, 0, 0, 0.88) 100%
+  );
+}
+
+/* All text content sits above the overlay */
+.player-card-content {
+  position: relative;
+  z-index: 1;
+  min-height: 376px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  box-sizing: border-box;
+}
 
 .player-rank {
-  color: #12a86c;
+  color: #ffffff;
+  font-family: "Google Sans", "Open Sans", sans-serif;
   font-weight: 700;
-  font-size: 30px;
+  font-size: 13px;
   line-height: 1;
-  margin-bottom: 10px;
-}
-
-.player-top {
-  border-top: 2px solid #73c7a6;
-  padding-top: 20px;
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-  margin-bottom: 8px;
-}
-
-.player-image {
-  width: 150px;
-  height: 150px;
-  margin: 16px 12px 16px;
-  border-radius: 8px;
-  object-fit: cover;
-  display: block;
-  flex-shrink: 0;
-  background: #d9d9d9;
-  mix-blend-mode: multiply;
-}
-
-.player-identity {
-  min-width: 0;
+  margin: 0 0 4px;
 }
 
 .player-name {
-  color: #00B26E;
+  color: #ffffff;
   font-family: "Google Sans", "Open Sans", sans-serif;
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1.2;
-  margin-top: 16px;
+  margin: 0 0 4px;
 }
 
 .player-team {
-  color: #00B26E;
+  color: rgba(255, 255, 255, 0.65);
   font-family: "Google Sans", "Open Sans", sans-serif;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   line-height: normal;
-  margin-top: 4px;
+  margin: 0;
+}
+
+/* Stats pushed to the bottom via flex */
+.player-stats {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
 }
 
 .player-info-row {
-  border-top: 2px solid #73c7a6;
-  margin-top: 16px;
-  padding-top: 16px;
-  margin-right: 12px;
-  margin-left: 12px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
 .player-info-row .label {
-  color: #9C9191;
-  font-size: clamp(14px, 1.2vw, 18px);
+  color: #83C1A7;
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 400;
 }
 
 .player-info-row .value {
-  color: #2f2f2f;
-  font-size: clamp(14px, 1.2vw, 18px);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 15px;
   font-weight: 500;
   text-align: right;
 }
 
 .full-stats-btn {
-  margin: 24px auto 0;
+  margin: 16px auto 0;
   display: block;
   border: none;
   border-radius: 999px;
-  background: #10b974;
+  background: #3A7E60;
   color: #fff;
-  padding: 10px 28px;
-  font-size: clamp(12px, 1.4vw, 18px);
+  padding: 10px 32px;
+  font-size: 14px;
   line-height: 1.1;
   cursor: pointer;
   font-family: "Google Sans", "Open Sans", sans-serif;
   font-weight: 600;
   letter-spacing: 0.02em;
+  transition: filter 0.18s ease;
 }
 
 .full-stats-btn:hover {
-  filter: brightness(0.95);
+  filter: brightness(0.9);
 }
 
 /* LLM mode and chat */
@@ -588,7 +605,7 @@
 /* Responsive */
 @media (max-width: 980px) {
   .player-grid {
-    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .feature-tiles {
@@ -622,5 +639,77 @@
     grid-template-columns: 1fr;
     gap: 18px;
     margin-top: 26px;
+  }
+}
+
+/* ── Hero overlay ─────────────────────────────────────────────── */
+
+/* Invisible placeholder that keeps the header layout stable while
+   the real search bar is animating in the hero overlay */
+.search-bar-ghost {
+  width: min(720px, 92vw);
+  height: 64px;
+  flex-shrink: 0;
+}
+
+/* Full-screen hero — opens when the user clicks the navbar search bar */
+.hero-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(24, 72, 50, 0.93);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer; /* clicking outside the inner panel closes the overlay */
+}
+
+/* Soccerpitch faint watermark — mirrors the welcome section feel */
+.hero-overlay::before {
+  content: "";
+  position: absolute;
+  inset: -6% -6%;
+  background-image: url("./assets/soccerpitch.svg");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.16;
+  pointer-events: none;
+  transform: scale(0.90);
+  mix-blend-mode: screen;
+  filter: brightness(1.35) contrast(1.15);
+  z-index: 0;
+}
+
+/* Inner panel — stops click-to-close from firing on content */
+.hero-overlay-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  width: 100%;
+  max-width: min(820px, 96vw);
+  padding: 0 24px;
+  cursor: default;
+}
+
+/* Logo in hero — bigger than the navbar version */
+.hero-logo-wrapper .logo-image {
+  height: 68px;
+  margin: 0 0 4px;
+  opacity: 0.9;
+}
+
+@media (max-width: 640px) {
+  .search-bar-ghost {
+    height: 56px;
+  }
+
+  .hero-logo-wrapper .logo-image {
+    height: 52px;
   }
 }

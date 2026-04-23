@@ -8,44 +8,45 @@ const fallbackImage =
 function PlayerCard({ data, onFullStatsClick }: PlayerCardProps): JSX.Element {
   return (
     <article className="player-card">
-      <p className="player-rank">#{data.rank}</p>
-      <div className="player-top">
-        <img
-          className="player-image"
-          src={data.image || fallbackImage}
-          alt={data.name}
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).src = fallbackImage;
-          }}
-        />
-        <div className="player-identity">
-          <h3 className="player-name">{data.name}</h3>
-          <p className="player-team">{data.team}</p>
+      <img
+        className="player-image"
+        src={data.image || fallbackImage}
+        alt={data.name}
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).src = fallbackImage;
+        }}
+      />
+      <div className="player-card-overlay" />
+      <div className="player-card-content">
+        <span className="player-rank">#{data.rank}</span>
+        <h3 className="player-name">{data.name}</h3>
+        <p className="player-team">{data.team}</p>
+        <div className="player-stats">
+          <div className="player-info-row">
+            <span className="label">Position:</span>
+            <span className="value">{data.position}</span>
+          </div>
+          <div className="player-info-row">
+            <span className="label">Country:</span>
+            <span className="value">{data.nationality}</span>
+          </div>
+          <div className="player-info-row">
+            <span className="label">Goals:</span>
+            <span className="value">{data.goals}</span>
+          </div>
+          <div className="player-info-row">
+            <span className="label">Appearances:</span>
+            <span className="value">{data.appearances}</span>
+          </div>
         </div>
+        <button
+          type="button"
+          className="full-stats-btn"
+          onClick={() => onFullStatsClick?.(data)}
+        >
+          Full Stats
+        </button>
       </div>
-      <div className="player-info-row">
-        <span className="label">Position</span>
-        <span className="value">{data.position}</span>
-      </div>
-      <div className="player-info-row">
-        <span className="label">Country</span>
-        <span className="value">{data.nationality}</span>
-      </div>
-      <div className="player-info-row">
-        <span className="label">Goals</span>
-        <span className="value">{data.goals}</span>
-      </div>
-      <div className="player-info-row">
-        <span className="label">Appearances</span>
-        <span className="value">{data.appearances}</span>
-      </div>
-      <button
-        type="button"
-        className="full-stats-btn"
-        onClick={() => onFullStatsClick?.(data)}
-      >
-        Full Stats
-      </button>
     </article>
   );
 }
