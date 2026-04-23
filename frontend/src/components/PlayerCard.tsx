@@ -58,9 +58,16 @@ function PlayerCard({ data, onFullStatsClick }: PlayerCardProps): JSX.Element {
               <ul className="svd-explain-list">
                 {data.svd_explain.positive_dimensions.map((d) => (
                   <li key={`p-${d.dim}`}>
-                    <span className="svd-dim">Dim {d.dim}</span>: q={d.query_activation.toFixed(2)}, p=
+                    <span className="svd-dim">
+                      Dim {d.dim}
+                      {d.label ? ` — ${d.label}` : ""}
+                    </span>
+                    : q={d.query_activation.toFixed(2)}, p=
                     {d.player_activation.toFixed(2)}, q×p={d.contribution.toFixed(3)}
                     <div className="svd-loadings">
+                      {d.label_detail ? (
+                        <div className="svd-dim-detail">{d.label_detail}</div>
+                      ) : null}
                       +V<sup>T</sup>: {d.top_positive_loadings.join(", ")} · −V<sup>T</sup>:{" "}
                       {d.top_negative_loadings.join(", ")}
                     </div>
@@ -73,9 +80,16 @@ function PlayerCard({ data, onFullStatsClick }: PlayerCardProps): JSX.Element {
               <ul className="svd-explain-list">
                 {data.svd_explain.negative_dimensions.map((d) => (
                   <li key={`n-${d.dim}`}>
-                    <span className="svd-dim">Dim {d.dim}</span>: q={d.query_activation.toFixed(2)}, p=
+                    <span className="svd-dim">
+                      Dim {d.dim}
+                      {d.label ? ` — ${d.label}` : ""}
+                    </span>
+                    : q={d.query_activation.toFixed(2)}, p=
                     {d.player_activation.toFixed(2)}, q×p={d.contribution.toFixed(3)}
                     <div className="svd-loadings">
+                      {d.label_detail ? (
+                        <div className="svd-dim-detail">{d.label_detail}</div>
+                      ) : null}
                       +V<sup>T</sup>: {d.top_positive_loadings.join(", ")} · −V<sup>T</sup>:{" "}
                       {d.top_negative_loadings.join(", ")}
                     </div>

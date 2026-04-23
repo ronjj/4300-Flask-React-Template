@@ -577,6 +577,11 @@
   font-weight: 600;
 }
 
+.svd-dim-detail {
+  margin: 4px 0 2px;
+  opacity: 0.9;
+}
+
 .svd-loadings {
   font-size: 11px;
   opacity: 0.88;

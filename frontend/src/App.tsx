@@ -211,10 +211,12 @@ function App(): JSX.Element {
                 {svdCompare.legend.map((e) => (
                   <li key={e.dim}>
                     <strong>Dim {e.dim}</strong>
+                    {e.label ? ` — ${e.label}` : ""}
                     {e.explained_variance_ratio != null &&
                       ` (variance explained ${(e.explained_variance_ratio * 100).toFixed(2)}%)`}
-                    : strongest +weights on {e.top_positive_loadings.join(", ")}; strongest −weights on{" "}
-                    {e.top_negative_loadings.join(", ")}.
+                    {e.label_detail ? ` — ${e.label_detail}` : ""}
+                    {!e.label_detail &&
+                      `: strongest +weights on ${e.top_positive_loadings.join(", ")}; strongest −weights on ${e.top_negative_loadings.join(", ")}.`}
                   </li>
                 ))}
               </ul>

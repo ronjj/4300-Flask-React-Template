@@ -6,9 +6,11 @@ import unicodedata
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from rapidfuzz import process
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+FBREF_META_PATH = os.path.join(DATA_DIR, "fbref_data", "fbref_player_meta.csv")
 
 LEAGUE_SOURCES = (
     {
@@ -30,6 +32,15 @@ POSITION_GROUPS = {
     "Defender": ("defender", "defenders", "back", "backs", "cb", "lb", "rb", "df"),
     "Midfielder": ("midfielder", "midfielders", "midfield", "mf", "cm", "am", "dm"),
     "Goalkeeper": ("goalkeeper", "goalkeepers", "keeper", "keepers", "gk"),
+}
+
+LEAGUE_KEYWORDS: dict[str, str] = {
+    "la liga": "La Liga",
+    "laliga": "La Liga",
+    "premier league": "Premier League",
+    "epl": "Premier League",
+    "serie a": "Serie A",
+    "seriea": "Serie A",
 }
 
 NATIONALITY_KEYWORDS = {
@@ -215,6 +226,76 @@ def choose_image(*values: Optional[str]) -> Optional[str]:
     return None
 
 
+def _load_fbref_headshots() -> dict[str, str]:
+    """Map normalized player name -> fbref headshot URL (offline from CSV)."""
+    if not os.path.exists(FBREF_META_PATH):
+        return {}
+    out: dict[str, str] = {}
+    try:
+        with open(FBREF_META_PATH, newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                url = (row.get("headshot_url") or "").strip()
+                if not url:
+                    continue
+                name = normalize_text(row.get("player_name") or "")
+                if not name:
+                    continue
+                # Prefer the first non-empty headshot encountered.
+                out.setdefault(name, url)
+    except Exception:
+        return {}
+    return out
+
+
+FBREF_HEADSHOTS = _load_fbref_headshots()
+_FBREF_KEYS = list(FBREF_HEADSHOTS.keys())
+_FBREF_MATCH_CACHE: dict[str, Optional[str]] = {}
+
+
+def fbref_headshot_for_normalized_name(normalized_name: str) -> Optional[str]:
+    """
+    Return an fbref headshot URL for a normalized player name.
+
+    Uses exact match when possible; otherwise uses a high-cutoff fuzzy match against
+    fbref's name index (cached) to handle abbreviated/variant names in league CSVs.
+    """
+    if not normalized_name:
+        return None
+    if normalized_name in _FBREF_MATCH_CACHE:
+        return _FBREF_MATCH_CACHE[normalized_name]
+    if normalized_name in FBREF_HEADSHOTS:
+        url = FBREF_HEADSHOTS[normalized_name]
+        _FBREF_MATCH_CACHE[normalized_name] = url
+        return url
+
+    # Special-case abbreviated first names (e.g. "p reina", "l paredes").
+    # Constrain candidates by last name + first initial to avoid bad matches.
+    tokens = normalized_name.split()
+    if len(tokens) >= 2 and len(tokens[0]) == 1:
+        initial = tokens[0]
+        last = tokens[-1]
+        constrained = [
+            k
+            for k in _FBREF_KEYS
+            if k.split() and k.split()[-1] == last and k[0] == initial
+        ]
+        if constrained:
+            match = process.extractOne(normalized_name, constrained, score_cutoff=80)
+            if match is not None:
+                url = FBREF_HEADSHOTS.get(match[0])
+                _FBREF_MATCH_CACHE[normalized_name] = url
+                return url
+
+    match = process.extractOne(normalized_name, _FBREF_KEYS, score_cutoff=92)
+    if match is None:
+        _FBREF_MATCH_CACHE[normalized_name] = None
+        return None
+    url = FBREF_HEADSHOTS.get(match[0])
+    _FBREF_MATCH_CACHE[normalized_name] = url
+    return url
+
+
 def parse_years(text: Optional[str]) -> List[int]:
     if not text:
         return []
@@ -278,6 +359,12 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         row.get("id"),
     )
 
+    expected_goals_freekick: Optional[float] = None
+    set_piece_goals: Optional[int] = None
+    freekick_shots: Optional[int] = None
+    passes: Optional[int] = None
+    key_passes: Optional[int] = None
+    progressive_passes: Optional[int] = None
     if league == "La Liga":
         name = first_non_empty(row.get("player_name"), row.get("nickname")) or "Unknown Player"
         appearances = safe_int(row.get("total_games"))
@@ -286,12 +373,26 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         shots = safe_int(row.get("total_scoring_att"))
         shots_on_target = safe_int(row.get("total_ontarget_attempt"))
         dribbles = safe_int(row.get("total_dribbles_attempted"))
+        passes = safe_int(row.get("total_accurate_pass") or row.get("total_pass"))
+        key_passes = safe_int(row.get("total_att_assist") or row.get("total_att_assist"))
+        progressive_passes = safe_int(row.get("total_accurate_fwd_zone_pass"))
         seasons = [value for value in [row.get("season_range")] if value]
         team = row.get("team_name")
         nationality = canonical_nationality(row.get("country"))
         position = primary_position(row.get("position"))
         image = choose_image(row.get("player_image"))
         minutes = safe_int(row.get("total_mins_played"))
+        expected_goals_freekick = safe_float(
+            first_non_empty(
+                row.get("total_att_freekick_goal"),
+                row.get("total_att_freekick_target"),
+                row.get("total_att_freekick_total"),
+            )
+        )
+        set_piece_goals = safe_int(
+            first_non_empty(row.get("total_att_freekick_goal"), row.get("total_direct_setpiece_goals"))
+        )
+        freekick_shots = safe_int(row.get("total_att_freekick_total"))
     elif league == "Premier League":
         name = (
             first_non_empty(
@@ -307,6 +408,9 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         shots = safe_int(row.get("totalShots"))
         shots_on_target = safe_int(row.get("shotsOnTargetIncGoals"))
         dribbles = safe_int(row.get("successfulDribbles"))
+        passes = safe_int(row.get("totalPasses"))
+        key_passes = safe_int(row.get("keyPassesAttemptAssists"))
+        progressive_passes = safe_int(row.get("forwardPasses"))
         season_range = row.get("season_range")
         seasons = [value for value in [season_range] if value]
         team = row.get("current_team_name")
@@ -314,6 +418,9 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         position = primary_position(row.get("position"))
         image = choose_image(row.get("player_image"))
         minutes = safe_int(row.get("timePlayed"))
+        expected_goals_freekick = safe_float(row.get("expectedGoalsFreekick"))
+        set_piece_goals = safe_int(first_non_empty(row.get("setPiecesGoals"), row.get("setPieceGoals")))
+        freekick_shots = safe_int(row.get("freekickTotal"))
     else:
         name = first_non_empty(row.get("display_name"), row.get("short_name")) or "Unknown Player"
         appearances = safe_int(row.get("games-played") or row.get("Games Played"))
@@ -322,15 +429,32 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         shots = safe_int(row.get("total-scoring-attempts") or row.get("Total Shots"))
         shots_on_target = safe_int(row.get("on-target-scoring-attempts") or row.get("Shots On Target ( inc goals )"))
         dribbles = safe_int(row.get("successful-dribble"))
+        passes = safe_int(first_non_empty(row.get("Total Passes"), row.get("total_pass")))
+        key_passes = safe_int(first_non_empty(row.get("Key Passes (Attempt Assists)"), row.get("key_pass")))
+        progressive_passes = safe_int(first_non_empty(row.get("Forward Passes"), row.get("forward_pass")))
         seasons = [value for value in [row.get("season_range"), row.get("season")] if value]
         team = row.get("team_name")
         nationality = canonical_nationality(row.get("nationality"))
         position = primary_position(row.get("role_label") or row.get("role"))
         image = choose_image(row.get("player_image"))
         minutes = safe_int(row.get("minutes-played") or row.get("Time Played"))
+        expected_goals_freekick = safe_float(
+            first_non_empty(
+                row.get("expectedGoalsFreekick"),
+                row.get("expected_goals_freekick"),
+                row.get("total_att_freekick_goal"),
+                row.get("total_att_freekick_target"),
+                row.get("total_att_freekick_total"),
+            )
+        )
+        set_piece_goals = safe_int(first_non_empty(row.get("setPieceGoal"), row.get("setPiecesGoals")))
+        freekick_shots = safe_int(first_non_empty(row.get("freeKickShots"), row.get("freekickTotal")))
 
     normalized_name = normalize_text(name)
     season_years = extract_season_years(row, league)
+    # Cheap fallback headshot (exact match only) when league data lacks an image.
+    if image is None:
+        image = choose_image(FBREF_HEADSHOTS.get(normalized_name))
 
     return {
         "player_id": player_id,
@@ -354,24 +478,38 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         "goals_per_game": rate_or_none(goals, appearances),
         "assists_per_game": rate_or_none(assists, appearances),
         "shot_on_target_ratio": rate_or_none(shots_on_target, shots),
+        "expected_goals_freekick": expected_goals_freekick,
+        "set_piece_goals": set_piece_goals,
+        "freekick_shots": freekick_shots,
+        "passes": passes,
+        "key_passes": key_passes,
+        "progressive_passes": progressive_passes,
     }
 
 
 def serialize_player(player: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_name = player.get("normalized_name")
+    image = player.get("image")
+    if not image and isinstance(normalized_name, str) and normalized_name:
+        image = choose_image(fbref_headshot_for_normalized_name(normalized_name))
     return {
         "player_id": player.get("player_id"),
         "name": player.get("name"),
+        "normalized_name": player.get("normalized_name"),
         "nationality": player.get("nationality"),
         "position": player.get("position"),
         "league": player.get("league"),
         "team": player.get("team"),
-        "image": player.get("image"),
+        "image": image,
         "goals": player.get("goals"),
         "assists": player.get("assists"),
         "appearances": player.get("appearances"),
         "minutes": player.get("minutes"),
         "shots_on_target": player.get("shots_on_target"),
         "dribbles_completed": player.get("dribbles_completed"),
+        "set_piece_goals": player.get("set_piece_goals"),
+        "freekick_shots": player.get("freekick_shots"),
+        "expected_goals_freekick": player.get("expected_goals_freekick"),
         "season_years": player.get("season_years", []),
         "seasons": player.get("seasons", []),
         "goals_per_game": player.get("goals_per_game"),
@@ -450,6 +588,27 @@ def nationality_filter_from_text(query: str) -> Optional[str]:
     return None
 
 
+def league_filter_from_text(query: str) -> Optional[str]:
+    """Detect a league mention (La Liga / Premier League / Serie A) from free text."""
+    text = normalize_text(query)
+    if not text:
+        return None
+    for keyword, league in LEAGUE_KEYWORDS.items():
+        if re.search(rf"\b{re.escape(keyword)}\b", text):
+            return league
+    # Handle "in <league words>" (e.g. "in la liga")
+    in_match = re.search(
+        r"\bin ([a-z]+(?: [a-z]+)?)\b",
+        text,
+    )
+    if in_match:
+        candidate = in_match.group(1)
+        for keyword, league in LEAGUE_KEYWORDS.items():
+            if candidate == keyword:
+                return league
+    return None
+
+
 def parse_query(query: str) -> Dict[str, Any]:
     text = normalize_text(query)
     filters: Dict[str, Any] = {"sort_by": "goals"}
@@ -487,6 +646,11 @@ def parse_query(query: str) -> Dict[str, Any]:
 
     if re.search(r"\bclinical\b", text):
         filters["sort_by"] = "shot_on_target_ratio"
+    elif re.search(r"\b(tekky|technical|silky|baller|skillful)\b", text):
+        filters["sort_by"] = "tekky_score"
+    elif re.search(r"\bfree\s*kicks?\b|\bfk\b|\bset\s*pieces?\b", text):
+        # Prefer a free-kick specific score (computed at ranking time).
+        filters["sort_by"] = "freekick_score"
     elif re.search(r"\bfast\b", text):
         filters["sort_by"] = "dribbles_completed"
     elif re.search(r"\b(best|top)\b", text):
@@ -497,11 +661,19 @@ def parse_query(query: str) -> Dict[str, Any]:
         filters["max_age_under"] = max_age_under
         filters["reference_year"] = reference_year_for_queries()
 
+    league = league_filter_from_text(query)
+    if league:
+        filters["league"] = league
+
     return filters
 
 
 def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     results = players
+
+    league = filters.get("league")
+    if league:
+        results = [player for player in results if player.get("league") == league]
 
     nationality_region = filters.get("nationality_region")
     if nationality_region:
@@ -552,15 +724,62 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             return float("inf")
         return -float(value)
 
+    def freekick_score(player: Dict[str, Any]) -> Optional[float]:
+        """
+        Best-effort free-kick ranking signal across heterogeneous leagues.
+
+        We prefer direct set-piece/free-kick goal counts when available (La Liga has
+        explicit free-kick goals; other leagues approximate via set-piece goals),
+        then boost by per-attempt efficiency when we have shot counts.
+        """
+        goals = safe_int(player.get("set_piece_goals"))
+        if goals is None:
+            return None
+        shots = safe_int(player.get("freekick_shots"))
+        if shots is None or shots <= 0:
+            return float(goals)
+        rate = goals / max(1, shots)
+        return float(goals) + 10.0 * float(rate)
+
+    def tekky_score(player: Dict[str, Any]) -> Optional[float]:
+        """
+        Cross-league technical midfield signal from available totals.
+
+        Emphasize dribbling + progressive passing + key passes; totals are imperfect
+        but consistent enough for ranking within league-sized subsets.
+        """
+        dr = safe_int(player.get("dribbles_completed"))
+        kp = safe_int(player.get("key_passes"))
+        pp = safe_int(player.get("progressive_passes"))
+        if dr is None and kp is None and pp is None:
+            return None
+        return float((dr or 0)) * 1.0 + float((pp or 0)) * 0.35 + float((kp or 0)) * 0.75
+
     sorted_results = sorted(
         results,
         key=lambda player: (
-            descending_number(player.get(sort_by)),
+            descending_number(
+                freekick_score(player)
+                if sort_by == "freekick_score"
+                else (tekky_score(player) if sort_by == "tekky_score" else player.get(sort_by))
+            ),
             descending_number(player.get("goals")),
             player.get("name", "").casefold(),
         ),
     )
-    return [serialize_player(player) for player in sorted_results[:20]]
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for player in sorted_results:
+        pid = str(player.get("player_id") or "")
+        key_name = str(player.get("normalized_name") or player.get("name") or "").casefold()
+        key = (pid or key_name, str(player.get("league") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(player)
+        if len(deduped) >= 20:
+            break
+    return [serialize_player(player) for player in deduped]
 
 
 def load_player_index() -> Dict[str, Any]:
