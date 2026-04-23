@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlayerCardData } from "../types";
 import RadarChart from "./RadarChart";
@@ -73,7 +73,7 @@ function PlayerProfile({ player, onClose }: Props): JSX.Element {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: MouseEvent) => e.stopPropagation()}
           >
             <div className="profile-hero">
               <img

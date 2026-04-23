@@ -16,7 +16,7 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
   const [loading, setLoading] = useState<boolean>(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inFlightControllerRef = useRef<AbortController | null>(null)
-  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inactivityTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
