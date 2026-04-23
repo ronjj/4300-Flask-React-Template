@@ -28,6 +28,7 @@ WORKDIR $CONTAINER_HOME
 
 COPY --from=python-deps /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY src/ $CONTAINER_HOME/src/
+COPY embeddings/ $CONTAINER_HOME/embeddings/
 COPY data/ $CONTAINER_HOME/data/
 COPY --from=frontend-build /app/frontend/dist $CONTAINER_HOME/frontend/dist
 

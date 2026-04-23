@@ -1,14 +1,24 @@
 import os
+import sys
+
+# Running `python src/app.py` from the repo root puts only `src/` on sys.path by default.
+# The `embeddings/` package lives next to `src/`, so add the repo root first.
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(_current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from dotenv import load_dotenv
 from flask import Flask
 
 load_dotenv()
 from flask_cors import CORS
-from routes import register_routes
+try:
+    from routes import register_routes
+except ImportError:  # pragma: no cover
+    from src.routes import register_routes
 
-# src/ directory and project root (one level up)
-current_directory = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_directory)
+current_directory = _current_dir
 
 # Serve React build files from <project_root>/frontend/dist
 app = Flask(__name__,

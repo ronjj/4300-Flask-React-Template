@@ -7,7 +7,12 @@ import os
 
 from flask import jsonify, request, send_from_directory
 
-from player_search import PLAYER_INDEX, boolean_search, find_player_by_name, parse_query
+try:
+    from player_search import find_player_by_name
+    from search_service import search_players
+except ImportError:  # pragma: no cover - package-style import fallback
+    from src.player_search import find_player_by_name
+    from src.search_service import search_players
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
 USE_LLM = False
@@ -30,9 +35,7 @@ def register_routes(app):
     @app.route("/api/search")
     def search():
         query = request.args.get("q", "")
-        filters = parse_query(query)
-        results = boolean_search(filters, PLAYER_INDEX["player_list"])
-        return jsonify({"results": results})
+        return jsonify(search_players(query))
 
     @app.route("/api/player")
     def player_lookup():
@@ -45,4 +48,4 @@ def register_routes(app):
     if USE_LLM:
         from llm_routes import register_chat_route
 
-        register_chat_route(app, lambda query: boolean_search(parse_query(query), PLAYER_INDEX["player_list"]))
+        register_chat_route(app, lambda query: search_players(query)["results"])
