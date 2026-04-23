@@ -12,5 +12,8 @@
     "flask",
     "react",
     "template"
-  ]
+  ],
+  "dependencies": {
+    "framer-motion": "^12.38.0"
+  }
 }
