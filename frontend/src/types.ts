@@ -27,10 +27,9 @@ export interface PlayerCardData {
   team: string | null
   position: string | null
   nationality: string | null
-  //wages: number | null // ideally not null once we have the data
-  //age: number | null // ideally not null once we have the data
   goals: number | null
   appearances: number | null
   image: string | null
+  fullStats?: PlayerStats
 }
 

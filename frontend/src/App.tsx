@@ -7,6 +7,7 @@ import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
 import { PlayerCardData, PlayerStats } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
+import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
 import soccerballSvg from "./assets/soccerball.svg";
 import compassSvg from "./assets/compass.svg";
@@ -77,7 +78,6 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
   );
 }
 
-// for stef to run deployed backend locally
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 interface SearchResponse {
   results: PlayerStats[];
@@ -95,6 +95,7 @@ function toCardData(results: PlayerStats[]): PlayerCardData[] {
     goals: player.goals,
     appearances: player.appearances,
     image: player.image,
+    fullStats: player,
   }));
 }
 
@@ -104,8 +105,10 @@ function App(): JSX.Element {
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [heroMode, setHeroMode] = useState<boolean>(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+  const spotlightRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const loadConfig = async (): Promise<void> => {
@@ -122,16 +125,19 @@ function App(): JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && heroMode) setHeroMode(false);
+      if (e.key === "Escape") {
+        if (selectedPlayer) setSelectedPlayer(null);
+        else if (heroMode) setHeroMode(false);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [heroMode]);
+  }, [heroMode, selectedPlayer]);
 
   useEffect(() => {
-    document.body.style.overflow = heroMode ? "hidden" : "";
+    document.body.style.overflow = (heroMode || selectedPlayer !== null) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [heroMode]);
+  }, [heroMode, selectedPlayer]);
 
   const { scrollY } = useScroll();
   const vh = window.innerHeight;
@@ -139,6 +145,27 @@ function App(): JSX.Element {
   const heroLogoOpacity = useTransform(scrollY, [vh * 0.38, vh * 0.65], [1, 0]);
   const heroLogoX       = useTransform(scrollY, [0, vh * 0.65], [0, -70]);
   const headerLogoOpacity = useTransform(scrollY, [vh * 0.5, vh * 0.85], [0, 1]);
+
+  useEffect(() => {
+    const el = spotlightRef.current;
+    if (!el) return;
+    const onMove = (e: MouseEvent) => {
+      const { left, top } = el.getBoundingClientRect();
+      el.style.setProperty("--sx", `${e.clientX - left}px`);
+      el.style.setProperty("--sy", `${e.clientY - top}px`);
+    };
+    const onLeave = () => {
+      el.style.setProperty("--sx", "-9999px");
+      el.style.setProperty("--sy", "-9999px");
+    };
+    el.addEventListener("mousemove", onMove);
+    el.addEventListener("mouseleave", onLeave);
+    onLeave();
+    return () => {
+      el.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mouseleave", onLeave);
+    };
+  }, []);
 
   const scrollToShell = (): void => {
     shellRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -175,15 +202,44 @@ function App(): JSX.Element {
     void runSearch(term);
   };
 
+  const activeFetchId = useRef(0);
+
+  const normalizeName = (s: string): string =>
+    s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
+  const handleFullStatsClick = (player: PlayerCardData): void => {
+    setSelectedPlayer(player);
+    if (!player.key.startsWith("popular-")) return;
+
+    const id = ++activeFetchId.current;
+
+    void (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(player.name)}`);
+        if (!res.ok || id !== activeFetchId.current) return;
+        const data: SearchResponse = await res.json();
+        if (id !== activeFetchId.current) return;
+        if (!Array.isArray(data.results) || data.results.length === 0) return;
+
+        const lastName = normalizeName(player.name.split(" ").pop()!);
+        const match = data.results.find((r) => normalizeName(r.name).includes(lastName));
+        if (!match) return;
+
+        const enriched = toCardData([match])[0];
+        setSelectedPlayer((prev) =>
+          prev?.key === player.key
+            ? { ...prev, fullStats: enriched.fullStats, image: enriched.image ?? prev.image }
+            : prev
+        );
+      } catch {}
+    })();
+  };
+
   const shellMode = useMemo<"home" | "results">(() => {
     if (players.length > 0 || status === "loading" || status === "empty" || status === "error") return "results";
     return "home";
   }, [players.length, status]);
 
-  const focusSearch = (): void => {
-    scrollToShell();
-    setHeroMode(true);
-  };
 
   const statusText =
     status === "loading"
@@ -204,10 +260,12 @@ function App(): JSX.Element {
       <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
         <motion.main
           className="welcome"
+          ref={spotlightRef}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: "easeOut" }}
         >
+          <div className="welcome-spotlight" />
           <div className="welcome-content">
             <motion.div
               style={{
@@ -266,26 +324,26 @@ function App(): JSX.Element {
                   transition={{ duration: 0.22, ease: "easeOut" }}
                 >
                   <div className="feature-tiles">
-                    <button type="button" className="feature-tile" onClick={focusSearch}>
+                    <div className="feature-tile">
                       <img src={searchSvg} alt="" aria-hidden="true" className="tile-icon" />
                       <h3 className="tile-title">Search</h3>
                       <p className="tile-subtitle">Type a player name or describe what you're looking for</p>
-                    </button>
-                    <button type="button" className="feature-tile" onClick={focusSearch}>
+                    </div>
+                    <div className="feature-tile">
                       <img src={soccerballSvg} alt="" aria-hidden="true" className="tile-icon" />
                       <h3 className="tile-title">Discover</h3>
                       <p className="tile-subtitle">Get ranked results with key stats</p>
-                    </button>
-                    <button type="button" className="feature-tile" onClick={focusSearch}>
+                    </div>
+                    <div className="feature-tile">
                       <img src={compassSvg} alt="" aria-hidden="true" className="tile-icon" />
                       <h3 className="tile-title">Explore</h3>
                       <p className="tile-subtitle">Dive into full player profiles</p>
-                    </button>
+                    </div>
                   </div>
 
                   <div className="popular-section">
                     <h2 className="section-title">Popular Players</h2>
-                    <PlayerGrid players={POPULAR_PLAYERS} />
+                    <PlayerGrid players={POPULAR_PLAYERS} onFullStatsClick={handleFullStatsClick} />
                   </div>
                 </motion.div>
               ) : (
@@ -310,7 +368,7 @@ function App(): JSX.Element {
                     )}
                   </AnimatePresence>
 
-                  <PlayerGrid players={players} />
+                  <PlayerGrid players={players} onFullStatsClick={handleFullStatsClick} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -369,6 +427,8 @@ function App(): JSX.Element {
         </AnimatePresence>
 
         {useLlm && <Chat onSearchTerm={handleChatSearch} />}
+
+        <PlayerProfile player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
       </div>
     </LayoutGroup>
   );
