@@ -34,7 +34,7 @@ def register_routes(app):
 
     @app.route("/api/config")
     def config():
-        return jsonify({"use_llm": USE_LLM})
+        return jsonify({"use_llm": USE_LLM, "player_chat": True})
 
     @app.route("/api/search")
     def search():
