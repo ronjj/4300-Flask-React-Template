@@ -57,16 +57,6 @@ export interface PlayerCardData {
   goals: number | null
   appearances: number | null
   image: string | null
-  similarity_score?: number | null
-  svd_explain?: SvdExplain
-}
-
-export interface SearchResponse {
-  mode?: string
-  results: PlayerStats[]
-  results_svd?: PlayerStats[] | null
-  results_without_svd?: PlayerStats[] | null
-  svd_available?: boolean
-  svd_latent_dimensions?: SvdLegendEntry[]
+  fullStats?: PlayerStats
 }
 

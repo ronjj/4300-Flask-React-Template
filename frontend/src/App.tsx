@@ -1,10 +1,16 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, LayoutGroup, motion, useScroll, useTransform } from "framer-motion";
 import "./App.css";
 import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats, SearchResponse, SvdLegendEntry } from "./types";
+import { PlayerCardData, PlayerStats } from "./types";
+import POPULAR_PLAYERS from "./data/popularPlayers";
+import PlayerProfile from "./components/PlayerProfile";
+import searchSvg from "./assets/search.svg";
+import soccerballSvg from "./assets/soccerball.svg";
+import compassSvg from "./assets/compass.svg";
 
 const EXAMPLE_QUERIES = [
   "best brazilian wingers",
@@ -29,7 +35,7 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
     const track = trackRef.current;
     if (!track) return;
 
-    const speed = 0.25; // px per frame
+    const speed = 0.25;
 
     const step = () => {
       if (!pausedRef.current) {
@@ -73,16 +79,10 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
     </div>
   );
 }
-// for stef to run deployed backend locally
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
-
-type SvdCompareState = {
-  without: PlayerCardData[];
-  with: PlayerCardData[];
-  legend: SvdLegendEntry[];
-};
 
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
@@ -95,16 +95,22 @@ function toCardData(results: PlayerStats[]): PlayerCardData[] {
     goals: player.goals,
     appearances: player.appearances,
     image: player.image,
-    similarity_score: player.similarity_score ?? undefined,
-    svd_explain: player.svd_explain,
+    fullStats: player,
   }));
 }
+
 function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [svdCompare, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
+  const [heroMode, setHeroMode] = useState<boolean>(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const spotlightRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
     const loadConfig = async (): Promise<void> => {
       try {
@@ -113,11 +119,59 @@ function App(): JSX.Element {
         const data: { use_llm?: boolean } = await response.json();
         setUseLlm(Boolean(data.use_llm));
       } catch {
-        // if config fails, keep useLlm = false and continue rendering UI
       }
     };
     void loadConfig();
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (selectedPlayer) setSelectedPlayer(null);
+        else if (heroMode) setHeroMode(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [heroMode, selectedPlayer]);
+
+  useEffect(() => {
+    document.body.style.overflow = (heroMode || selectedPlayer !== null) ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [heroMode, selectedPlayer]);
+
+  const { scrollY } = useScroll();
+  const vh = window.innerHeight;
+  const heroLogoScale   = useTransform(scrollY, [0, vh * 0.65], [1, 0.26]);
+  const heroLogoOpacity = useTransform(scrollY, [vh * 0.38, vh * 0.65], [1, 0]);
+  const heroLogoX       = useTransform(scrollY, [0, vh * 0.65], [0, -70]);
+  const headerLogoOpacity = useTransform(scrollY, [vh * 0.5, vh * 0.85], [0, 1]);
+
+  useEffect(() => {
+    const el = spotlightRef.current;
+    if (!el) return;
+    const onMove = (e: MouseEvent) => {
+      const { left, top } = el.getBoundingClientRect();
+      el.style.setProperty("--sx", `${e.clientX - left}px`);
+      el.style.setProperty("--sy", `${e.clientY - top}px`);
+    };
+    const onLeave = () => {
+      el.style.setProperty("--sx", "-9999px");
+      el.style.setProperty("--sy", "-9999px");
+    };
+    el.addEventListener("mousemove", onMove);
+    el.addEventListener("mouseleave", onLeave);
+    onLeave();
+    return () => {
+      el.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mouseleave", onLeave);
+    };
+  }, []);
+
+  const scrollToShell = (): void => {
+    shellRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const runSearch = async (term: string): Promise<void> => {
     const trimmed = term.trim();
     if (trimmed === "") {
@@ -126,6 +180,7 @@ function App(): JSX.Element {
       setStatus("idle");
       return;
     }
+    scrollToShell();
     setStatus("loading");
     try {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
@@ -159,75 +214,242 @@ function App(): JSX.Element {
       setStatus("error");
     }
   };
+
   const handleChatSearch = (term: string): void => {
     setSearchTerm(term);
     void runSearch(term);
   };
+
+  const activeFetchId = useRef(0);
+
+  const normalizeName = (s: string): string =>
+    s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
+  const handleFullStatsClick = (player: PlayerCardData): void => {
+    setSelectedPlayer(player);
+    if (!player.key.startsWith("popular-")) return;
+
+    const id = ++activeFetchId.current;
+
+    void (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(player.name)}`);
+        if (!res.ok || id !== activeFetchId.current) return;
+        const data: SearchResponse = await res.json();
+        if (id !== activeFetchId.current) return;
+        if (!Array.isArray(data.results) || data.results.length === 0) return;
+
+        const lastName = normalizeName(player.name.split(" ").pop()!);
+        const match = data.results.find((r) => normalizeName(r.name).includes(lastName));
+        if (!match) return;
+
+        const enriched = toCardData([match])[0];
+        setSelectedPlayer((prev) =>
+          prev?.key === player.key
+            ? { ...prev, fullStats: enriched.fullStats, image: enriched.image ?? prev.image }
+            : prev
+        );
+      } catch {}
+    })();
+  };
+
+  const shellMode = useMemo<"home" | "results">(() => {
+    if (players.length > 0 || status === "loading" || status === "empty" || status === "error") return "results";
+    return "home";
+  }, [players.length, status]);
+
+
+  const statusText =
+    status === "loading"
+      ? "Searching..."
+      : status === "empty"
+        ? "No results found."
+        : status === "error"
+          ? "Could not load results. Please try again."
+          : null;
+
+  const handleSearchChange = (nextValue: string): void => {
+    setSearchTerm(nextValue);
+    if (status !== "idle") setStatus("idle");
+  };
+
   return (
-    <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
-      <div className="top-text">
-        <Logo />
-        <SearchBar
-          value={searchTerm}
-          onChange={(nextValue) => {
-            setSearchTerm(nextValue);
-            if (status !== "idle") setStatus("idle");
-          }}
-          onSubmit={() => void runSearch(searchTerm)}
-          placeholder="look up the best Brazilian wingers..."
-        />
-        <QueryCarousel onSelect={(q) => {
-          setSearchTerm(q);
-          void runSearch(q);
-        }} />
-      </div>
-      {status === "loading" && <p className="search-feedback">Searching...</p>}
-      {status === "empty" && <p className="search-feedback">No results found.</p>}
-      {status === "error" && (
-        <p className="search-feedback">Could not load results. Please try again.</p>
-      )}
-      {svdCompare != null ? (
-        <div className="svd-compare-wrap">
-          <p className="svd-compare-note">
-            <strong>SVD comparison.</strong> Left: rankings by cosine similarity in the original scaled stat
-            vectors. Right: same query prototype projected with TruncatedSVD, then cosine similarity in latent
-            space. Expand a card on the right for per-dimension q×p explainability (positive vs negative latent
-            alignment).
-          </p>
-          <div className="svd-compare-grid">
-            <div className="svd-compare-col">
-              <h2>Without SVD (original feature space)</h2>
-              <PlayerGrid players={svdCompare.without} />
-            </div>
-            <div className="svd-compare-col">
-              <h2>With SVD (latent space)</h2>
-              <PlayerGrid players={svdCompare.with} />
-            </div>
+    <LayoutGroup>
+      <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
+        <motion.main
+          className="welcome"
+          ref={spotlightRef}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+        >
+          <div className="welcome-spotlight" />
+          <div className="welcome-content">
+            <motion.div
+              style={{
+                scale: heroLogoScale,
+                opacity: heroLogoOpacity,
+                x: heroLogoX,
+                originX: 0,
+                originY: 0,
+              }}
+            >
+              <Logo className="logo-hero" />
+            </motion.div>
+            <p className="tagline">World Class Results, Every Time.</p>
           </div>
-          {svdCompare.legend.length > 0 && (
-            <details className="svd-legend">
-              <summary>Latent dimensions — interpretation from Vᵀ loadings</summary>
-              <ul className="svd-legend-list">
-                {svdCompare.legend.map((e) => (
-                  <li key={e.dim}>
-                    <strong>Dim {e.dim}</strong>
-                    {e.label ? ` — ${e.label}` : ""}
-                    {e.explained_variance_ratio != null &&
-                      ` (variance explained ${(e.explained_variance_ratio * 100).toFixed(2)}%)`}
-                    {e.label_detail ? ` — ${e.label_detail}` : ""}
-                    {!e.label_detail &&
-                      `: strongest +weights on ${e.top_positive_loadings.join(", ")}; strongest −weights on ${e.top_negative_loadings.join(", ")}.`}
-                  </li>
-                ))}
-              </ul>
-            </details>
+        </motion.main>
+
+        <motion.main
+          className="app-shell"
+          ref={shellRef}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+        >
+          <header className="app-header">
+            <div className="header-inner">
+              <motion.div style={{ opacity: headerLogoOpacity }}>
+                <Logo className="logo-header" />
+              </motion.div>
+              <div className="header-search">
+                {!heroMode ? (
+                  <motion.div layoutId="main-search">
+                    <SearchBar
+                      value={searchTerm}
+                      inputRef={searchInputRef}
+                      onFocus={() => { scrollToShell(); setHeroMode(true); }}
+                      onChange={handleSearchChange}
+                      onSubmit={() => void runSearch(searchTerm)}
+                      placeholder="look up the best Brazilian wingers..."
+                    />
+                  </motion.div>
+                ) : (
+                  <div className="search-bar-ghost" aria-hidden="true" />
+                )}
+              </div>
+            </div>
+          </header>
+
+          <section className="content">
+            <AnimatePresence mode="wait" initial={false}>
+              {shellMode === "home" ? (
+                <motion.div
+                  key="home"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
+                >
+                  <div className="feature-tiles">
+                    <div className="feature-tile">
+                      <img src={searchSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <h3 className="tile-title">Search</h3>
+                      <p className="tile-subtitle">Type a player name or describe what you're looking for</p>
+                    </div>
+                    <div className="feature-tile">
+                      <img src={soccerballSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <h3 className="tile-title">Discover</h3>
+                      <p className="tile-subtitle">Get ranked results with key stats</p>
+                    </div>
+                    <div className="feature-tile">
+                      <img src={compassSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <h3 className="tile-title">Explore</h3>
+                      <p className="tile-subtitle">Dive into full player profiles</p>
+                    </div>
+                  </div>
+
+                  <div className="popular-section">
+                    <h2 className="section-title">Popular Players</h2>
+                    <PlayerGrid players={POPULAR_PLAYERS} onFullStatsClick={handleFullStatsClick} />
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="results"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
+                  <AnimatePresence>
+                    {statusText && (
+                      <motion.p
+                        className="search-feedback"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.18, ease: "easeOut" }}
+                      >
+                        {statusText}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
+
+                  <PlayerGrid players={players} onFullStatsClick={handleFullStatsClick} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+        </motion.main>
+
+        <AnimatePresence>
+          {heroMode && (
+            <motion.div
+              className="hero-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              onClick={() => setHeroMode(false)}
+            >
+              <div className="hero-overlay-inner" onClick={(e) => e.stopPropagation()}>
+                <motion.div
+                  className="hero-logo-wrapper"
+                  initial={{ opacity: 0, scale: 0.88 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.92 }}
+                  transition={{ duration: 0.28, ease: "easeOut" }}
+                >
+                  <Logo className="logo-hero" />
+                </motion.div>
+
+                <motion.div layoutId="main-search">
+                  <SearchBar
+                    value={searchTerm}
+                    autoFocus
+                    onChange={handleSearchChange}
+                    onSubmit={() => {
+                      setHeroMode(false);
+                      void runSearch(searchTerm);
+                    }}
+                    placeholder="look up the best Brazilian wingers..."
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.26, delay: 0.16, ease: "easeOut" }}
+                >
+                  <QueryCarousel onSelect={(q) => {
+                    setSearchTerm(q);
+                    setHeroMode(false);
+                    void runSearch(q);
+                  }} />
+                </motion.div>
+              </div>
+            </motion.div>
           )}
-        </div>
-      ) : (
-        <PlayerGrid players={players} />
-      )}
-      {useLlm && <Chat onSearchTerm={handleChatSearch} />}
-    </div>
+        </AnimatePresence>
+
+        {useLlm && <Chat onSearchTerm={handleChatSearch} />}
+
+        <PlayerProfile player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
+      </div>
+    </LayoutGroup>
   );
 }
+
 export default App;
