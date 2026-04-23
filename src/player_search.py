@@ -270,6 +270,73 @@ def rate_or_none(numerator: Optional[int], denominator: Optional[int]) -> Option
     return numerator / denominator
 
 
+def build_row_provenance_id(league: str, player_id: Optional[str], seasons: List[str]) -> str:
+    season_label = seasons[0] if seasons else "unknown"
+    base_player_id = player_id or "unknown"
+    return f"{normalize_text(league)}:{base_player_id}:{normalize_text(season_label) or 'unknown'}"
+
+
+def extract_stat_features(row: Dict[str, Any], league: str) -> Dict[str, Optional[float]]:
+    if league == "La Liga":
+        progressive_passes = safe_float(row.get("total_accurate_fwd_zone_pass"))
+        key_passes = safe_float(row.get("total_att_assist"))
+        pass_completion = rate_or_none(
+            safe_int(row.get("total_accurate_pass")),
+            safe_int(row.get("total_pass")),
+        )
+        tackles = safe_float(row.get("total_tackle"))
+        interceptions = safe_float(row.get("total_interception"))
+        recoveries = safe_float(row.get("total_recovery"))
+        aerial_duels_won = safe_float(row.get("total_aerial_won"))
+        duels = None
+    elif league == "Premier League":
+        progressive_passes = safe_float(row.get("forwardPasses"))
+        key_passes = safe_float(row.get("keyPassesAttemptAssists"))
+        pass_completion = rate_or_none(
+            safe_int(row.get("totalPasses")) - safe_int(row.get("totalFwdZonePasses")) if safe_int(row.get("totalPasses")) is not None and safe_int(row.get("totalFwdZonePasses")) is not None else None,
+            safe_int(row.get("totalPasses")),
+        )
+        if pass_completion is None:
+            pass_completion = rate_or_none(
+                safe_int(row.get("accuratePasses")),
+                safe_int(row.get("totalPasses")),
+            )
+        tackles = safe_float(row.get("totalTackles"))
+        interceptions = safe_float(row.get("interceptions"))
+        recoveries = safe_float(row.get("recoveries"))
+        aerial_duels_won = safe_float(row.get("aerialDuelsWon"))
+        duels = safe_float(row.get("duelsWon"))
+    else:
+        progressive_passes = safe_float(row.get("Forward Passes"))
+        key_passes = safe_float(row.get("Assists")) or safe_float(row.get("Goal Assists"))
+        pass_completion = safe_float(row.get("accurate-pass-percentage"))
+        tackles = safe_float(row.get("Tackles won")) or safe_float(row.get("Tackles"))
+        interceptions = safe_float(row.get("Interceptions"))
+        recoveries = safe_float(row.get("Recoveries"))
+        aerial_duels_won = safe_float(row.get("Aerial Duels won"))
+        duels = safe_float(row.get("Duels won"))
+
+    return {
+        "goals": safe_float(row.get("goals") or row.get("Goals") or row.get("total_goals")),
+        "assists": safe_float(row.get("goalAssists") or row.get("assists") or row.get("Goal Assists") or row.get("total_assists")),
+        "shots_on_target": safe_float(row.get("shotsOnTargetIncGoals") or row.get("Shots On Target ( inc goals )") or row.get("total_ontarget_attempt")),
+        "dribbles_completed": safe_float(row.get("successfulDribbles") or row.get("successful-dribble") or row.get("total_dribbles_attempted")),
+        "minutes": safe_float(row.get("timePlayed") or row.get("minutes-played") or row.get("Time Played") or row.get("total_mins_played")),
+        "appearances": safe_float(row.get("gamesPlayed") or row.get("appearances") or row.get("games-played") or row.get("Games Played") or row.get("total_games")),
+        "goals_per_game": None,
+        "assists_per_game": None,
+        "shot_on_target_ratio": None,
+        "progressive_passes": progressive_passes,
+        "key_passes": key_passes,
+        "pass_completion": pass_completion,
+        "tackles": tackles,
+        "interceptions": interceptions,
+        "recoveries": recoveries,
+        "aerial_duels_won": aerial_duels_won,
+        "duels": duels,
+    }
+
+
 def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
     player_id = first_non_empty(
         row.get("player_id"),
@@ -331,6 +398,12 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
 
     normalized_name = normalize_text(name)
     season_years = extract_season_years(row, league)
+    stat_features = extract_stat_features(row, league)
+    stat_features["goals_per_game"] = rate_or_none(goals, appearances)
+    stat_features["assists_per_game"] = rate_or_none(assists, appearances)
+    stat_features["shot_on_target_ratio"] = rate_or_none(shots_on_target, shots)
+    season_id = first_non_empty(row.get("season_id"), row.get("season"), row.get("season_range"))
+    season_label = first_non_empty(row.get("season"), row.get("season_range"))
 
     return {
         "player_id": player_id,
@@ -354,6 +427,12 @@ def normalize_row(row: Dict[str, Any], league: str) -> Dict[str, Any]:
         "goals_per_game": rate_or_none(goals, appearances),
         "assists_per_game": rate_or_none(assists, appearances),
         "shot_on_target_ratio": rate_or_none(shots_on_target, shots),
+        "season_id": season_id,
+        "season_label": season_label,
+        "source_dataset": normalize_text(league).replace(" ", "_"),
+        "row_id": build_row_provenance_id(league, player_id, seasons),
+        "role_bucket": position or "Unknown",
+        "stat_features": stat_features,
     }
 
 

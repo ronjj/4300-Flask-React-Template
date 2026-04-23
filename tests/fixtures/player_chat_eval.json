@@ -1,0 +1,72 @@
+[
+  {
+    "query": "players like Luka Modric with progressive passing from the 2010s",
+    "expected_intent": "similarity",
+    "expected_mode": "hybrid",
+    "expected_filters": {"year_range": [2010, 2019]},
+    "notes": "Should prioritize midfielders with strong progression passing signals."
+  },
+  {
+    "query": "compare Luka Modric vs Toni Kroos in the 2010s",
+    "expected_intent": "comparison",
+    "expected_mode": "player",
+    "expected_filters": {"year_range": [2010, 2019]},
+    "notes": "Should resolve both players and build side-by-side supporting rows."
+  },
+  {
+    "query": "best defensive midfielders in Serie A",
+    "expected_intent": "ranking",
+    "expected_mode": "season",
+    "expected_filters": {"leagues": ["Serie A"], "positions": ["Midfielder"]},
+    "notes": "Should rank midfield rows with defensive emphasis."
+  },
+  {
+    "query": "explain why creative midfielders from Argentina stand out",
+    "expected_intent": "explanation",
+    "expected_mode": "season",
+    "expected_filters": {"nationality": "Argentina", "positions": ["Midfielder"]},
+    "notes": "Should emphasize explanation wording while staying grounded."
+  },
+  {
+    "query": "players like Pedri",
+    "expected_intent": "similarity",
+    "expected_mode": "player",
+    "expected_filters": {},
+    "notes": "Named-player similarity without era should stay in player mode."
+  },
+  {
+    "query": "clinical forwards in La Liga from 2018 to 2020",
+    "expected_intent": "similarity",
+    "expected_mode": "season",
+    "expected_filters": {"leagues": ["La Liga"], "year_range": [2018, 2020], "positions": ["Forward"]},
+    "notes": "Should capture explicit range filters."
+  },
+  {
+    "query": "young African midfielders under 23",
+    "expected_intent": "similarity",
+    "expected_mode": "season",
+    "expected_filters": {"positions": ["Midfielder"], "max_age_under": 23},
+    "notes": "Should use region nationality filtering and age ceiling."
+  },
+  {
+    "query": "compare Messi and Ronaldo",
+    "expected_intent": "comparison",
+    "expected_mode": "player",
+    "expected_filters": {},
+    "notes": "Should validate comparison even without explicit era."
+  },
+  {
+    "query": "physical defenders with at least 1500 minutes",
+    "expected_intent": "similarity",
+    "expected_mode": "season",
+    "expected_filters": {"positions": ["Defender"], "minutes_min": 1500},
+    "notes": "Should capture minutes floor."
+  },
+  {
+    "query": "playmakers from Croatia in the Premier League",
+    "expected_intent": "similarity",
+    "expected_mode": "season",
+    "expected_filters": {"leagues": ["Premier League"], "nationality": "Croatia"},
+    "notes": "Should combine nationality and league filters."
+  }
+]

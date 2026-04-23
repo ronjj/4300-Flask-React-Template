@@ -9,9 +9,11 @@ from flask import jsonify, request, send_from_directory
 
 try:
     from player_search import find_player_by_name
+    from player_chat_routes import register_player_chat_route
     from search_service import search_players
 except ImportError:  # pragma: no cover - package-style import fallback
     from src.player_search import find_player_by_name
+    from src.player_chat_routes import register_player_chat_route
     from src.search_service import search_players
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
@@ -21,6 +23,8 @@ USE_LLM = False
 
 
 def register_routes(app):
+    register_player_chat_route(app)
+
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     def serve(path):
