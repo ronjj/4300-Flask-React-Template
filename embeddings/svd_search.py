@@ -60,6 +60,73 @@ def _component_feature_hints(
     return pos_feats, neg_feats
 
 
+_FEATURE_BUCKETS: dict[str, tuple[str, ...]] = {
+    "Finishing": ("goals", "expected_goals", "shots_on_target", "goals_per_90", "shots"),
+    "Chance creation": ("assists", "key_passes", "expected_assists"),
+    "Passing & progression": ("passes", "progressive_passes"),
+    "Ball carrying / 1v1": ("dribbles_completed",),
+    "Defending": ("tackles", "interceptions", "blocks", "clearances", "recoveries", "aerial_duels_won"),
+    "Usage / availability": ("minutes_played", "appearances"),
+    "Discipline": ("yellow_cards", "red_cards"),
+    "Goalkeeping": ("saves", "clean_sheets", "save_percentage", "goals_against"),
+    "Position bias": ("pos_Forward", "pos_Midfielder", "pos_Defender", "pos_Goalkeeper"),
+}
+
+
+def _dimension_human_label(
+    components: np.ndarray,
+    feature_names: list[str],
+    dim: int,
+    top_n: int = 6,
+) -> tuple[str, str]:
+    """
+    Produce a human-readable label for a latent dimension from its loadings.
+
+    Returns (label, detail) where label is a short phrase and detail is a
+    "high vs low" description derived from top + and - loadings.
+    """
+    if dim < 0 or dim >= components.shape[0]:
+        return "Latent factor", ""
+    loadings = components[dim]
+    order = np.argsort(loadings)
+    neg_feats = [feature_names[i] for i in order[:top_n]]
+    pos_feats = [feature_names[i] for i in order[-top_n:][::-1]]
+
+    def bucket_scores(feats: list[str]) -> dict[str, float]:
+        scores: dict[str, float] = {k: 0.0 for k in _FEATURE_BUCKETS}
+        for feat in feats:
+            if feat not in feature_names:
+                continue
+            idx = feature_names.index(feat)
+            w = float(abs(loadings[idx]))
+            for bucket, members in _FEATURE_BUCKETS.items():
+                if feat in members:
+                    scores[bucket] += w
+        return scores
+
+    pos_scores = bucket_scores(pos_feats)
+    neg_scores = bucket_scores(neg_feats)
+
+    def top_buckets(scores: dict[str, float], k: int = 2) -> list[str]:
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        ranked = [b for b, s in ranked if s > 0]
+        return ranked[:k]
+
+    pos_top = top_buckets(pos_scores, k=2)
+    neg_top = top_buckets(neg_scores, k=2)
+
+    # Prefer a single strong bucket; otherwise combine the top two.
+    label_bits = pos_top[:]
+    if not label_bits:
+        label_bits = ["Latent factor"]
+    label = " + ".join(label_bits[:2])
+
+    pos_detail = ", ".join(pos_feats[:3])
+    neg_detail = ", ".join(neg_feats[:3])
+    detail = f"High: {pos_detail} · Low: {neg_detail}"
+    return label, detail
+
+
 def explain_latent_alignment(
     query_latent: np.ndarray,
     player_latent: np.ndarray,
@@ -85,9 +152,12 @@ def explain_latent_alignment(
         if products[idx] >= 0:
             break
         pos_h, neg_h = _component_feature_hints(components, feature_names, int(idx))
+        label, label_detail = _dimension_human_label(components, feature_names, int(idx))
         neg_dims.append(
             {
                 "dim": int(idx),
+                "label": label,
+                "label_detail": label_detail,
                 "query_activation": float(q[idx]),
                 "player_activation": float(p[idx]),
                 "contribution": float(products[idx]),
@@ -101,9 +171,12 @@ def explain_latent_alignment(
         if products[idx] <= 0:
             break
         pos_h, neg_h = _component_feature_hints(components, feature_names, int(idx))
+        label, label_detail = _dimension_human_label(components, feature_names, int(idx))
         pos_dims.append(
             {
                 "dim": int(idx),
+                "label": label,
+                "label_detail": label_detail,
                 "query_activation": float(q[idx]),
                 "player_activation": float(p[idx]),
                 "contribution": float(products[idx]),
@@ -150,8 +223,11 @@ def svd_dimension_legend(bundle: dict[str, Any], max_dims: int = 16) -> list[dic
     k = min(max_dims, components.shape[0])
     for d in range(k):
         pos_h, neg_h = _component_feature_hints(components, feature_names, d, top_n=3)
+        label, label_detail = _dimension_human_label(components, feature_names, d, top_n=6)
         entry: dict[str, Any] = {
             "dim": d,
+            "label": label,
+            "label_detail": label_detail,
             "top_positive_loadings": pos_h,
             "top_negative_loadings": neg_h,
         }

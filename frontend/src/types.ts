@@ -1,5 +1,7 @@
 export interface SvdDimensionExplain {
   dim: number
+  label?: string
+  label_detail?: string
   query_activation: number
   player_activation: number
   contribution: number
@@ -14,6 +16,8 @@ export interface SvdExplain {
 
 export interface SvdLegendEntry {
   dim: number
+  label?: string
+  label_detail?: string
   top_positive_loadings: string[]
   top_negative_loadings: string[]
   explained_variance_ratio?: number
@@ -53,16 +57,6 @@ export interface PlayerCardData {
   goals: number | null
   appearances: number | null
   image: string | null
-  similarity_score?: number | null
-  svd_explain?: SvdExplain
-}
-
-export interface SearchResponse {
-  mode?: string
-  results: PlayerStats[]
-  results_svd?: PlayerStats[] | null
-  results_without_svd?: PlayerStats[] | null
-  svd_available?: boolean
-  svd_latent_dimensions?: SvdLegendEntry[]
+  fullStats?: PlayerStats
 }
 

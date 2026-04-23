@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
+
 from embeddings.features import CANONICAL_FEATURE_COLUMNS, build_feature_matrix
 from embeddings.preprocess import preprocess_player_stats
 from embeddings.similarity import find_similar_players
 from embeddings.store import load_embeddings, save_embeddings
+from embeddings.text_embeddings import build_text_embeddings
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
@@ -20,13 +23,18 @@ def main() -> None:
     LOGGER.info("Building canonical feature matrix")
     matrix, player_index, player_metadata, scalers = build_feature_matrix(player_df, metadata)
 
+    LOGGER.info("Building text embeddings (Wikipedia + Reddit)")
+    text_bundle = build_text_embeddings(player_index)
+    matrix = np.concatenate([matrix, text_bundle.matrix], axis=1)
+    feature_names = list(CANONICAL_FEATURE_COLUMNS) + [f"text_{i}" for i in range(text_bundle.dim)]
+
     LOGGER.info("Saving embeddings and metadata")
     save_embeddings(
         matrix,
         player_index,
         player_metadata,
         scalers,
-        feature_column_names=list(CANONICAL_FEATURE_COLUMNS),
+        feature_column_names=feature_names,
     )
 
     LOGGER.info("Reloading embeddings for smoke test")

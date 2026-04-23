@@ -30,6 +30,6 @@ package-lock.json
 .env.local
 vite.config.ts*
 
-# Large original data files (split into parts instead)
+# Large data files
 data/reddit.csv
-data/bbc_data/bbc_articles.csv
+data/bbc_data/
