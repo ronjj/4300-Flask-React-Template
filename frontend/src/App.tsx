@@ -17,10 +17,8 @@ const EXAMPLE_QUERIES = [
   "top scorers in La Liga",
   "fastest defenders in the Premier League",
   "creative midfielders from Argentina",
-  "young strikers under 23",
   "best free kick takers",
   "most assists in Serie A",
-  "tall center backs over 6ft",
   "clinical finishers in Bundesliga",
   "box-to-box midfielders",
   "best Spanish goalkeepers",
@@ -60,13 +58,17 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
   return (
     <div
       className="query-carousel-wrapper"
-      onMouseEnter={() => { pausedRef.current = true; }}
-      onMouseLeave={() => { pausedRef.current = false; }}
+      onMouseEnter={() => {
+        pausedRef.current = true;
+      }}
+      onMouseLeave={() => {
+        pausedRef.current = false;
+      }}
     >
       <div className="query-carousel-track" ref={trackRef}>
         {chips.map((q, i) => (
           <button
-            key={i}
+            key={`${q}-${i}`}
             className="query-chip"
             onClick={() => onSelect(q)}
           >
@@ -79,15 +81,13 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-interface SearchResponse {
-  results: PlayerStats[];
-}
+
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
 type SearchMode = string | null;
 
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
-    key: `${player.name}-${player.team ?? "unknown"}-${player.league ?? "unknown"}`,
+    key: `${player.name}-${player.team ?? "unknown"}-${player.league ?? "unknown"}-${index}`,
     rank: index + 1,
     name: player.name,
     team: player.team,
@@ -104,6 +104,7 @@ function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
+  const [svdCompare, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
@@ -177,6 +178,7 @@ function App(): JSX.Element {
     const trimmed = term.trim();
     if (trimmed === "") {
       setPlayers([]);
+      setSvdCompare(null);
       setStatus("idle");
       return;
     }
@@ -187,16 +189,32 @@ function App(): JSX.Element {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
         setPlayers([]);
+        setSvdCompare(null);
         setStatus("error");
         return;
       }
       const data: SearchResponse = await response.json();
-      const nextPlayers = toCardData(Array.isArray(data.results) ? data.results : []);
+      const results = Array.isArray(data.results) ? data.results : [];
+      const nextPlayers = toCardData(results);
       setPlayers(nextPlayers);
+      if (
+        data.svd_available &&
+        data.results_without_svd != null &&
+        data.results_svd != null
+      ) {
+        setSvdCompare({
+          without: toCardData(data.results_without_svd),
+          with: toCardData(data.results_svd),
+          legend: data.svd_latent_dimensions ?? [],
+        });
+      } else {
+        setSvdCompare(null);
+      }
       setStatus(nextPlayers.length > 0 ? "populated" : "empty");
       setSearchMode(data.results[0]?.search_mode ?? null);
     } catch {
       setPlayers([]);
+      setSvdCompare(null);
       setStatus("error");
     }
   };

@@ -1,0 +1,1 @@
+"""FootySearch player embeddings package."""
