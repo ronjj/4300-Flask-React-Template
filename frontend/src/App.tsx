@@ -5,8 +5,7 @@ import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
-import { PlayerCardData, PlayerStats, SvdLegendEntry } from "./types";
+import { PlayerCardData, PlayerStats, SearchResponse, SvdLegendEntry } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -85,14 +84,6 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
 type SearchMode = string | null;
-
-interface SearchResponse {
-  results: PlayerStats[];
-  svd_available?: boolean;
-  results_without_svd?: PlayerStats[] | null;
-  results_svd?: PlayerStats[] | null;
-  svd_latent_dimensions?: SvdLegendEntry[];
-}
 
 interface SvdCompareState {
   without: PlayerCardData[];
