@@ -462,7 +462,7 @@ def generate_grounded_answer(
 
     from infosci_spark_client import LLMClient
 
-    client = LLMClient(SPARK_API_KEY=SPARK_API_KEY)
+    client = LLMClient(api_key=SPARK_API_KEY)
     messages = build_grounded_messages(
         user_message=user_message,
         retrieval_mode=retrieval_mode,

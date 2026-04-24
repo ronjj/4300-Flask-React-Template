@@ -123,7 +123,7 @@ def rewrite_player_chat_query(message: str) -> str:
 
     from infosci_spark_client import LLMClient
 
-    client = LLMClient(SPARK_API_KEY=SPARK_API_KEY)
+    client = LLMClient(api_key=SPARK_API_KEY)
     response = client.chat(
         [
             {

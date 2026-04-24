@@ -57,7 +57,7 @@ def register_chat_route(app, json_search):
         if not SPARK_API_KEY:
             return jsonify({"error": "SPARK_API_KEY not set — add it to your .env file"}), 500
 
-        client = LLMClient(SPARK_API_KEY=SPARK_API_KEY)
+        client = LLMClient(api_key=SPARK_API_KEY)
         use_search, search_term = llm_search_decision(client, user_message)
 
         if use_search:
