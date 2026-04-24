@@ -6,6 +6,7 @@ import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
 import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
+import { PlayerCardData, PlayerStats, SvdLegendEntry } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -85,6 +86,20 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
 type SearchMode = string | null;
 
+interface SearchResponse {
+  results: PlayerStats[];
+  svd_available?: boolean;
+  results_without_svd?: PlayerStats[] | null;
+  results_svd?: PlayerStats[] | null;
+  svd_latent_dimensions?: SvdLegendEntry[];
+}
+
+interface SvdCompareState {
+  without: PlayerCardData[];
+  with: PlayerCardData[];
+  legend: SvdLegendEntry[];
+}
+
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
     key: `${player.name}-${player.team ?? "unknown"}-${player.league ?? "unknown"}-${index}`,
@@ -104,6 +119,7 @@ function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
+  const [, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
@@ -247,7 +263,7 @@ function App(): JSX.Element {
         if (!Array.isArray(data.results) || data.results.length === 0) return;
 
         const lastName = normalizeName(player.name.split(" ").pop()!);
-        const match = data.results.find((r) => normalizeName(r.name).includes(lastName));
+        const match = data.results.find((r: PlayerStats) => normalizeName(r.name).includes(lastName));
         if (!match) return;
 
         const enriched = toCardData([match])[0];
