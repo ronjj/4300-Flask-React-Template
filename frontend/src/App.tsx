@@ -5,7 +5,7 @@ import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
+import { PlayerCardData, PlayerStats, SearchResponse, SvdLegendEntry } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -83,6 +83,13 @@ function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Ele
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
+type SearchMode = string | null;
+
+interface SvdCompareState {
+  without: PlayerCardData[];
+  with: PlayerCardData[];
+  legend: SvdLegendEntry[];
+}
 
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
@@ -103,7 +110,9 @@ function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
+  const [, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
+  const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -180,6 +189,7 @@ function App(): JSX.Element {
     }
     scrollToShell();
     setStatus("loading");
+    setSearchMode(null);
     try {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
@@ -189,9 +199,30 @@ function App(): JSX.Element {
       }
       const data: SearchResponse = await response.json();
       const results = Array.isArray(data.results) ? data.results : [];
-      const nextPlayers = toCardData(results);
+
+      // Build rank-delta map: name → (rank_without_svd − rank_with_svd)
+      // positive = SVD moved the player higher in the list
+      const rankDeltaMap = new Map<string, number>();
+      if (data.svd_available && data.results_without_svd && data.results_svd) {
+        const withoutRanks = new Map(
+          data.results_without_svd.map((p, i) => [p.name, i])
+        );
+        data.results_svd.forEach((player, svdIdx) => {
+          const withoutIdx = withoutRanks.get(player.name);
+          if (withoutIdx !== undefined) {
+            rankDeltaMap.set(player.name, withoutIdx - svdIdx);
+          }
+        });
+      }
+
+      const nextPlayers = toCardData(results).map((card) =>
+        rankDeltaMap.has(card.name)
+          ? { ...card, svdRankDelta: rankDeltaMap.get(card.name)! }
+          : card
+      );
       setPlayers(nextPlayers);
       setStatus(nextPlayers.length > 0 ? "populated" : "empty");
+      setSearchMode(data.results[0]?.search_mode ?? null);
     } catch {
       setPlayers([]);
       setStatus("error");
@@ -366,6 +397,23 @@ function App(): JSX.Element {
                       >
                         {statusText}
                       </motion.p>
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence>
+                    {searchMode?.toLowerCase().includes("svd") && status === "populated" && (
+                      <motion.div
+                        className="svd-badge"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.26, ease: "easeOut" }}
+                      >
+                        <span className="svd-badge-icon">✦</span>
+                        <span className="svd-badge-label">Query upgraded</span>
+                        <span className="svd-badge-sep">·</span>
+                        <span className="svd-badge-desc">SVD enhanced matching</span>
+                      </motion.div>
                     )}
                   </AnimatePresence>
 

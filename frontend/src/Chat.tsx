@@ -22,10 +22,11 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
   const [loading, setLoading] = useState<boolean>(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inFlightControllerRef = useRef<AbortController | null>(null)
-  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inactivityTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length === 0) return
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [messages, loading])
 
   const formatKeyStats = (stats?: Record<string, unknown>): string[] => {
