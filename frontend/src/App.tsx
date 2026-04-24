@@ -5,7 +5,7 @@ import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats } from "./types";
+import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -104,7 +104,6 @@ function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
-  const [svdCompare, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
@@ -178,7 +177,6 @@ function App(): JSX.Element {
     const trimmed = term.trim();
     if (trimmed === "") {
       setPlayers([]);
-      setSvdCompare(null);
       setStatus("idle");
       return;
     }
@@ -189,32 +187,37 @@ function App(): JSX.Element {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
         setPlayers([]);
-        setSvdCompare(null);
         setStatus("error");
         return;
       }
       const data: SearchResponse = await response.json();
       const results = Array.isArray(data.results) ? data.results : [];
-      const nextPlayers = toCardData(results);
-      setPlayers(nextPlayers);
-      if (
-        data.svd_available &&
-        data.results_without_svd != null &&
-        data.results_svd != null
-      ) {
-        setSvdCompare({
-          without: toCardData(data.results_without_svd),
-          with: toCardData(data.results_svd),
-          legend: data.svd_latent_dimensions ?? [],
+
+      // Build rank-delta map: name → (rank_without_svd − rank_with_svd)
+      // positive = SVD moved the player higher in the list
+      const rankDeltaMap = new Map<string, number>();
+      if (data.svd_available && data.results_without_svd && data.results_svd) {
+        const withoutRanks = new Map(
+          data.results_without_svd.map((p, i) => [p.name, i])
+        );
+        data.results_svd.forEach((player, svdIdx) => {
+          const withoutIdx = withoutRanks.get(player.name);
+          if (withoutIdx !== undefined) {
+            rankDeltaMap.set(player.name, withoutIdx - svdIdx);
+          }
         });
-      } else {
-        setSvdCompare(null);
       }
+
+      const nextPlayers = toCardData(results).map((card) =>
+        rankDeltaMap.has(card.name)
+          ? { ...card, svdRankDelta: rankDeltaMap.get(card.name)! }
+          : card
+      );
+      setPlayers(nextPlayers);
       setStatus(nextPlayers.length > 0 ? "populated" : "empty");
       setSearchMode(data.results[0]?.search_mode ?? null);
     } catch {
       setPlayers([]);
-      setSvdCompare(null);
       setStatus("error");
     }
   };

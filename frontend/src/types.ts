@@ -58,5 +58,21 @@ export interface PlayerCardData {
   appearances: number | null
   image: string | null
   fullStats?: PlayerStats
+  svdRankDelta?: number
+}
+
+export interface SearchResponse {
+  mode: string
+  results: PlayerStats[]
+  results_svd?: PlayerStats[] | null
+  results_without_svd?: PlayerStats[] | null
+  svd_available: boolean
+  svd_latent_dimensions?: SvdLegendEntry[]
+}
+
+export interface SvdCompareState {
+  without: PlayerCardData[]
+  with: PlayerCardData[]
+  legend: SvdLegendEntry[]
 }
 
