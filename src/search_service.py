@@ -79,6 +79,7 @@ def _load_feature_names(expected_dim: int) -> list[str]:
 SIMILAR_PLAYER_PATTERNS = (
     re.compile(r"^\s*(?:players?\s+)?most like\s+(.+?)\s*$", re.IGNORECASE),
     re.compile(r"^\s*(?:players?\s+)?similar to\s+(.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*players?\s+like\s+(.+?)\s*$", re.IGNORECASE),
     re.compile(r"^\s*who(?:'s| is)\s+like\s+(.+?)\s*$", re.IGNORECASE),
 )
 DESCRIPTION_HINTS = (
