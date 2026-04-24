@@ -117,13 +117,13 @@ DISPLAY_NAME_MAP = {
 
 
 def rewrite_player_chat_query(message: str) -> str:
-    api_key = os.getenv("API_KEY")
-    if not api_key:
+    SPARK_API_KEY = os.getenv("SPARK_API_KEY")
+    if not SPARK_API_KEY:
         return message
 
     from infosci_spark_client import LLMClient
 
-    client = LLMClient(api_key=api_key)
+    client = LLMClient(SPARK_API_KEY=SPARK_API_KEY)
     response = client.chat(
         [
             {

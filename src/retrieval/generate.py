@@ -456,13 +456,13 @@ def generate_grounded_answer(
     if not evidence or retrieval_confidence < 0.30:
         return build_no_evidence_answer(user_message), None
 
-    api_key = os.getenv("API_KEY")
-    if not api_key:
-        raise RuntimeError("API_KEY not set — add it to your .env file")
+    SPARK_API_KEY = os.getenv("SPARK_API_KEY")
+    if not SPARK_API_KEY:
+        raise RuntimeError("SPARK_API_KEY not set — add it to your .env file")
 
     from infosci_spark_client import LLMClient
 
-    client = LLMClient(api_key=api_key)
+    client = LLMClient(SPARK_API_KEY=SPARK_API_KEY)
     messages = build_grounded_messages(
         user_message=user_message,
         retrieval_mode=retrieval_mode,
