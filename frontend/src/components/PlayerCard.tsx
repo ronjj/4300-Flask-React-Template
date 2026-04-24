@@ -18,7 +18,14 @@ function PlayerCard({ data, onFullStatsClick }: PlayerCardProps): JSX.Element {
       />
       <div className="player-card-overlay" />
       <div className="player-card-content">
-        <span className="player-rank">#{data.rank}</span>
+        <div className="player-rank-row">
+          <span className="player-rank">#{data.rank}</span>
+          {data.svdRankDelta !== undefined && data.svdRankDelta !== 0 && (
+            <span className={`svd-rank-delta ${data.svdRankDelta > 0 ? "up" : "down"}`}>
+              SVD {data.svdRankDelta > 0 ? `↑${data.svdRankDelta}` : `↓${Math.abs(data.svdRankDelta)}`}
+            </span>
+          )}
+        </div>
         <h3 className="player-name">{data.name}</h3>
         <p className="player-team">{data.team}</p>
         <div className="player-stats">

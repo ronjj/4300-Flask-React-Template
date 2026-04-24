@@ -1,6 +1,6 @@
 import { useEffect, MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { PlayerCardData } from "../types";
+import { PlayerCardData, SvdDimensionExplain, SvdExplain } from "../types";
 import RadarChart from "./RadarChart";
 
 type Props = {
@@ -25,6 +25,68 @@ function ExtraRow({ label, value }: { label: string; value: string | number | nu
     <div className="profile-extra-row">
       <span className="profile-extra-label">{label}</span>
       <span className="profile-extra-value">{value ?? "—"}</span>
+    </div>
+  );
+}
+
+function SvdDimRow({
+  dim,
+  maxAbs,
+  positive,
+}: {
+  dim: SvdDimensionExplain;
+  maxAbs: number;
+  positive: boolean;
+}): JSX.Element {
+  const widthPct = (Math.abs(dim.contribution) / maxAbs) * 100;
+  const label = dim.label ?? `Dimension ${dim.dim + 1}`;
+  const features = positive ? dim.top_positive_loadings : dim.top_negative_loadings;
+
+  return (
+    <div className="svd-dim-item">
+      <div className="svd-dim-header">
+        <span className={`svd-dim-arrow ${positive ? "pos" : "neg"}`}>
+          {positive ? "↑" : "↓"}
+        </span>
+        <span className="svd-dim-label">{label}</span>
+        <span className={`svd-dim-value ${positive ? "pos" : "neg"}`}>
+          {positive ? "+" : ""}{dim.contribution.toFixed(2)}
+        </span>
+      </div>
+      <div className="svd-dim-bar-track">
+        <div
+          className={`svd-dim-bar-fill ${positive ? "pos" : "neg"}`}
+          style={{ width: `${widthPct}%` }}
+        />
+      </div>
+      {features.length > 0 && (
+        <p className="svd-dim-features">{features.slice(0, 3).join(" · ")}</p>
+      )}
+    </div>
+  );
+}
+
+function SvdBreakdown({ explain }: { explain: SvdExplain }): JSX.Element {
+  const posDims = explain.positive_dimensions.slice(0, 3);
+  const negDims = explain.negative_dimensions.slice(0, 2);
+  const allDims = [...posDims, ...negDims];
+  if (allDims.length === 0) return <></>;
+
+  const maxAbs = Math.max(...allDims.map((d) => Math.abs(d.contribution)), 0.001);
+
+  return (
+    <div className="svd-breakdown">
+      {posDims.map((dim) => (
+        <SvdDimRow key={`pos-${dim.dim}`} dim={dim} maxAbs={maxAbs} positive />
+      ))}
+      {negDims.length > 0 && (
+        <>
+          <div className="svd-breakdown-divider" />
+          {negDims.map((dim) => (
+            <SvdDimRow key={`neg-${dim.dim}`} dim={dim} maxAbs={maxAbs} positive={false} />
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -129,6 +191,13 @@ function PlayerProfile({ player, onClose }: Props): JSX.Element {
                       value={fs.league}
                     />
                   </div>
+                </div>
+              )}
+
+              {fs?.svd_explain && (
+                <div className="profile-svd-section">
+                  <p className="profile-section-label">Match Breakdown</p>
+                  <SvdBreakdown explain={fs.svd_explain} />
                 </div>
               )}
             </div>
