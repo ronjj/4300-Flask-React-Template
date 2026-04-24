@@ -19,7 +19,8 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
   const inactivityTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length === 0) return
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [messages, loading])
 
   const resetInactivityTimer = (timeoutMs: number): void => {
