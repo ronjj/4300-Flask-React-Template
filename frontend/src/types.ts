@@ -47,6 +47,59 @@ export interface PlayerStats {
   svd_explain?: SvdExplain
 }
 
+export interface SearchResponse {
+  mode?: string
+  results: PlayerStats[]
+  results_svd?: PlayerStats[] | null
+  results_without_svd?: PlayerStats[] | null
+  svd_available?: boolean
+  svd_latent_dimensions?: SvdLegendEntry[]
+}
+
+export interface PlayerChatResult {
+  player_id?: string | null
+  player_name?: string | null
+  position?: string | null
+  league?: string | null
+  team?: string | null
+  final_player_score?: number | null
+  best_row_score?: number | null
+  avg_top2_row_score?: number | null
+  player_profile_score?: number | null
+}
+
+export interface PlayerChatEvidence {
+  evidence_id?: string
+  source_type?: string
+  player_id?: string | null
+  player_name?: string | null
+  season_id?: string | null
+  season_label?: string | null
+  team?: string | null
+  league?: string | null
+  position?: string | null
+  retrieval_mode?: string
+  retrieval_score?: number | null
+  rank?: number | null
+  matched_filters?: Record<string, unknown>
+  style_matches?: Array<{ term?: string; stat_family?: string }>
+  key_stats?: Record<string, unknown>
+  provenance?: {
+    dataset?: string
+    row_id?: string
+    retrieved_at?: string
+  }
+}
+
+export interface PlayerChatResponse {
+  answer?: string
+  results?: PlayerChatResult[]
+  evidence?: PlayerChatEvidence[]
+  retrieval_confidence?: number | null
+  warnings?: string[]
+  error?: string
+}
+
 export interface PlayerCardData {
   key: string
   rank: number
@@ -59,4 +112,3 @@ export interface PlayerCardData {
   image: string | null
   fullStats?: PlayerStats
 }
-

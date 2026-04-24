@@ -67,13 +67,26 @@ def register_player_chat_route(app) -> None:
             )
             for index, hit in enumerate(retrieval.get("hits") or [])
         ]
+        anchor_evidence = None
+        if retrieval.get("anchor_hit"):
+            anchor_evidence = build_evidence_record(
+                retrieval["anchor_hit"],
+                retrieval_mode=retrieval["retrieval_mode"],
+                matched_filters=resolved_filters,
+                rank=0,
+            )
+            anchor_evidence["normalized_name"] = retrieval["anchor_hit"].get("normalized_name")
+            anchor_evidence["anchor_role_bucket"] = retrieval["anchor_hit"].get("anchor_role_bucket")
+            anchor_evidence["is_aggregate_row"] = retrieval["anchor_hit"].get("is_aggregate_row", False)
 
         try:
-            answer = generate_grounded_answer(
+            answer, generation_debug = generate_grounded_answer(
                 user_message=message,
                 retrieval_mode=retrieval["retrieval_mode"],
                 evidence=evidence,
                 retrieval_confidence=float(retrieval.get("retrieval_confidence", 0.0)),
+                anchor_evidence=anchor_evidence,
+                include_debug=bool(data.get("debug")),
             )
         except RuntimeError as exc:
             return jsonify({"error": str(exc)}), 500
@@ -91,4 +104,10 @@ def register_player_chat_route(app) -> None:
             "community_discussion": [],
             "debug": retrieval.get("debug") if data.get("debug") else None,
         }
+        if data.get("debug") and anchor_evidence is not None:
+            response["debug"] = response.get("debug") or {}
+            response["debug"]["anchor_evidence"] = anchor_evidence
+        if data.get("debug") and generation_debug is not None:
+            response["debug"] = response.get("debug") or {}
+            response["debug"]["generation"] = generation_debug
         return jsonify(response)

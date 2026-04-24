@@ -41,6 +41,21 @@ STYLE_TO_STATS = {
     "press resistant": ["retention", "pass_completion", "progressive_passes", "dribbles_completed"],
     "physical": ["duels", "aerial_duels_won", "recoveries", "minutes"],
 }
+POSITION_PRIORITY = {
+    "Midfielder": 0,
+    "Defender": 1,
+    "Forward": 2,
+    "Goalkeeper": 3,
+}
+LOW_SAMPLE_KEYWORDS = (
+    "young",
+    "prospect",
+    "emerging",
+    "small sample",
+    "limited minutes",
+    "bench",
+    "rotation",
+)
 
 COMPARISON_SPLIT_PATTERNS = (
     re.compile(r"\bvs\.?\b", re.IGNORECASE),
@@ -235,6 +250,38 @@ def _infer_mode(
     return "season"
 
 
+def _infer_anchor_role(player_name: str | None) -> tuple[str | None, list[str]]:
+    if not player_name:
+        return None, []
+    normalized_name = normalize_text(player_name)
+    rows = PLAYER_INDEX["players_by_name"].get(normalized_name) or []
+    if not rows:
+        return None, []
+
+    counts: dict[str, int] = {}
+    minutes_by_position: dict[str, float] = {}
+    for row in rows:
+        position = row.get("position")
+        if not position:
+            continue
+        counts[position] = counts.get(position, 0) + 1
+        minutes_by_position[position] = minutes_by_position.get(position, 0.0) + float(row.get("minutes") or 0.0)
+
+    if not counts:
+        return None, []
+
+    max_count = max(counts.values())
+    candidates = [position for position, count in counts.items() if count == max_count]
+    if len(candidates) > 1:
+        max_minutes = max(minutes_by_position.get(position, 0.0) for position in candidates)
+        candidates = [position for position in candidates if minutes_by_position.get(position, 0.0) == max_minutes]
+    if len(candidates) > 1:
+        candidates.sort(key=lambda position: POSITION_PRIORITY.get(position, 999))
+    anchor_role = candidates[0]
+    compatible_positions = sorted({row.get("position") for row in rows if row.get("position") == anchor_role})
+    return anchor_role, compatible_positions
+
+
 def parse_player_chat_query(message: str) -> dict[str, Any]:
     normalized = normalize_text(message)
     year_range, has_explicit_era = _extract_year_range(message)
@@ -248,6 +295,9 @@ def parse_player_chat_query(message: str) -> dict[str, Any]:
     minutes_min = int(minutes_match.group(1)) if minutes_match else None
     has_similarity_language = bool(re.search(r"\b(like|similar|most like)\b", normalized))
     has_comparison_language = bool(re.search(r"\b(vs|versus|compare|comparison)\b", normalized))
+    has_low_sample_intent = any(keyword in normalized for keyword in LOW_SAMPLE_KEYWORDS)
+    anchor_player_name = players[0] if players else None
+    anchor_role_bucket, anchor_compatible_positions = _infer_anchor_role(anchor_player_name)
 
     filters: dict[str, Any] = {
         "year_range": year_range,
@@ -298,6 +348,12 @@ def parse_player_chat_query(message: str) -> dict[str, Any]:
             for item in style_descriptors
         ],
         "sort_preference": "goals" if intent == "ranking" else None,
+        "anchor_player_name": anchor_player_name,
+        "anchor_player_normalized_name": normalize_text(anchor_player_name) if anchor_player_name else None,
+        "anchor_role_bucket": anchor_role_bucket,
+        "anchor_compatible_positions": anchor_compatible_positions,
+        "is_named_player_similarity": intent == "similarity" and bool(anchor_player_name),
+        "has_low_sample_intent": has_low_sample_intent,
         "parser_flags": {
             "has_named_player": bool(players),
             "has_explicit_era": has_explicit_era,

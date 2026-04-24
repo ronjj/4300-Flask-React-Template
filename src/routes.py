@@ -17,8 +17,8 @@ except ImportError:  # pragma: no cover - package-style import fallback
     from src.search_service import search_players
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
-USE_LLM = False
-# USE_LLM = True
+# USE_LLM = False
+USE_LLM = True
 # ─────────────────────────────────────────────────────────────────────────────
 
 

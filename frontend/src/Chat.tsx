@@ -1,9 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import SearchIcon from './assets/mag.png'
+import { PlayerChatEvidence, PlayerChatResponse, PlayerChatResult } from './types'
 
 interface Message {
-  text: string
   isUser: boolean
+  text: string
+  results?: PlayerChatResult[]
+  evidence?: PlayerChatEvidence[]
+  retrievalConfidence?: number | null
+  warnings?: string[]
 }
 
 interface ChatProps {
@@ -44,56 +49,49 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
     resetInactivityTimer(120000)
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/player-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
         signal: controller.signal,
       })
 
+      const data: PlayerChatResponse = await response.json()
+
       if (!response.ok) {
-        const data = await response.json()
-        setMessages(prev => [...prev, { text: 'Error: ' + (data.error || response.status), isUser: false }])
+        const errorText = data.answer || data.error || `Error: ${response.status}`
+        setMessages(prev => [...prev, { text: String(errorText), isUser: false }])
         return
       }
 
-      let assistantText = ''
-      setMessages(prev => [...prev, { text: '', isUser: false }])
-
-      if (!response.body) {
-        setMessages(prev => [...prev, { text: 'Error: No response body from server', isUser: false }])
+      const answer = (data.answer || '').trim()
+      if (!answer) {
+        const fallbackError = data.error || 'Error: Invalid response from server'
+        setMessages(prev => [...prev, { text: String(fallbackError), isUser: false }])
         return
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
+      const results = Array.isArray(data.results) ? data.results : []
+      const warnings = Array.isArray(data.warnings) ? data.warnings : []
+      const evidence = Array.isArray(data.evidence) ? data.evidence : []
+      const retrievalConfidence =
+        typeof data.retrieval_confidence === 'number' ? data.retrieval_confidence : null
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.search_term !== undefined) {
-                onSearchTerm(data.search_term)
-              }
-              resetInactivityTimer(120000)
-              if (data.error) {
-                setMessages(prev => [...prev.slice(0, -1), { text: 'Error: ' + data.error, isUser: false }])
-                return
-              }
-              if (data.content !== undefined) {
-                assistantText += data.content
-                setMessages(prev => [...prev.slice(0, -1), { text: assistantText, isUser: false }])
-              }
-            } catch {}
-          }
-        }
+      setMessages(prev => [
+        ...prev,
+        {
+          text: answer,
+          isUser: false,
+          results,
+          evidence,
+          retrievalConfidence,
+          warnings,
+        },
+      ])
+
+      if (results.length === 1) {
+        const playerName = results[0]?.player_name?.trim()
+        if (playerName) onSearchTerm(playerName)
       }
     } catch {
       const isAbort = controller.signal.aborted
@@ -118,6 +116,41 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
         {messages.map((msg, i) => (
           <div key={i} className={`message ${msg.isUser ? 'user' : 'assistant'}`}>
             <p>{msg.text}</p>
+            {!msg.isUser && (
+              <>
+                {(msg.retrievalConfidence != null || (msg.results?.length ?? 0) > 0 || (msg.warnings?.length ?? 0) > 0) && (
+                  <div className="chat-meta">
+                    {msg.retrievalConfidence != null && (
+                      <p className="chat-meta-line">
+                        Retrieval confidence: {msg.retrievalConfidence.toFixed(3)}
+                      </p>
+                    )}
+                    {(msg.results?.length ?? 0) > 0 && (
+                      <div className="chat-meta-block">
+                        <p className="chat-meta-title">Top results</p>
+                        <ul className="chat-meta-list">
+                          {msg.results?.slice(0, 3).map((result, resultIndex) => (
+                            <li key={`${result.player_id ?? result.player_name ?? 'result'}-${resultIndex}`}>
+                              {[result.player_name, result.team].filter(Boolean).join(' · ') || 'Unnamed player'}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {(msg.warnings?.length ?? 0) > 0 && (
+                      <div className="chat-meta-block">
+                        <p className="chat-meta-title">Warnings</p>
+                        <ul className="chat-meta-list">
+                          {msg.warnings?.map((warning, warningIndex) => (
+                            <li key={`${warning}-${warningIndex}`}>{warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         ))}
         {loading && (
@@ -135,7 +168,7 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
           <img src={SearchIcon} alt="" />
           <input
             type="text"
-            placeholder="Ask the AI about Keeping Up with the Kardashians"
+            placeholder="Ask about similar players, comparisons, or playing styles..."
             value={input}
             onChange={e => setInput(e.target.value)}
             disabled={loading}

@@ -45,6 +45,16 @@ STAT_FAMILY_FEATURES = {
     "retention": ["pass_completion", "dribbles_completed", "progressive_passes"],
     "duels": ["duels", "aerial_duels_won", "recoveries", "minutes"],
 }
+REQUESTED_STYLE_PRIMARY_STATS = {
+    "progression_passing": ["progressive_passes", "key_passes"],
+    "chance_creation": ["key_passes", "assists"],
+    "defensive_actions": ["interceptions", "tackles"],
+    "finishing": ["goals", "shots_on_target"],
+    "retention": ["pass_completion", "progressive_passes"],
+    "duels": ["duels", "aerial_duels_won"],
+}
+DEFAULT_NAMED_PLAYER_MINUTES_FLOOR = 600
+MINUTES_RELIABILITY_SATURATION = 1800.0
 
 
 def _safe_float(value: Any) -> float:
@@ -106,16 +116,27 @@ def _candidate_rows(filters: dict[str, Any]) -> list[dict[str, Any]]:
     return [row for row in PLAYER_INDEX["player_list"] if _row_matches_filters(row, filters)]
 
 
+def _sanitize_vector(vector: np.ndarray) -> np.ndarray:
+    sanitized = np.nan_to_num(vector.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
+    return np.clip(sanitized, -5.0, 5.0)
+
+
 def _vector_from_row(row: dict[str, Any]) -> np.ndarray:
     stat_features = row.get("stat_features") or {}
     vector = np.array([_safe_float(stat_features.get(feature)) for feature in BASE_FEATURE_ORDER], dtype=float)
-    return np.nan_to_num(vector, nan=0.0, posinf=0.0, neginf=0.0)
+    return _sanitize_vector(vector)
 
 
 def _vector_from_profile(profile: dict[str, Any]) -> np.ndarray:
     feature_means = profile.get("feature_means") or {}
     vector = np.array([_safe_float(feature_means.get(feature)) for feature in BASE_FEATURE_ORDER], dtype=float)
-    return np.nan_to_num(vector, nan=0.0, posinf=0.0, neginf=0.0)
+    return _sanitize_vector(vector)
+
+
+def _is_aggregate_row(row: dict[str, Any]) -> bool:
+    season_years = row.get("season_years") or []
+    season_label = str(row.get("season_label") or "")
+    return len(set(season_years)) > 1 or " – " in season_label or "--" in season_label
 
 
 def _normalized_bucket_vectors(
@@ -132,8 +153,8 @@ def _normalized_bucket_vectors(
         mean = matrix.mean(axis=0)
         std = matrix.std(axis=0)
         std = np.where(std == 0, 1.0, std)
-        normalized_matrix = np.clip((matrix - mean) / std, -5.0, 5.0)
-        normalized[bucket] = np.nan_to_num(normalized_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        normalized_matrix = _sanitize_vector((matrix - mean) / std)
+        normalized[bucket] = normalized_matrix
         stats[bucket] = (mean, std)
     return normalized, stats
 
@@ -183,10 +204,10 @@ def _normalized_query_vector(
     if descriptor_only:
         norm = np.linalg.norm(raw_query_vector)
         normalized = raw_query_vector if norm == 0 else raw_query_vector / norm
-        return np.nan_to_num(np.clip(normalized, -5.0, 5.0), nan=0.0, posinf=0.0, neginf=0.0)
+        return _sanitize_vector(normalized)
     mean, std = bucket_stats
     normalized = (raw_query_vector - mean) / std
-    return np.nan_to_num(np.clip(normalized, -5.0, 5.0), nan=0.0, posinf=0.0, neginf=0.0)
+    return _sanitize_vector(normalized)
 
 
 def _descriptor_match_score(row: dict[str, Any], style_descriptors: list[dict[str, Any]]) -> float:
@@ -205,6 +226,20 @@ def _descriptor_match_score(row: dict[str, Any], style_descriptors: list[dict[st
     return positive / total if total else 0.0
 
 
+def _style_stat_backing_score(row: dict[str, Any], style_descriptors: list[dict[str, Any]]) -> float:
+    if not style_descriptors:
+        return 0.0
+    stat_features = row.get("stat_features") or {}
+    scores: list[float] = []
+    for descriptor in style_descriptors:
+        primary_stats = REQUESTED_STYLE_PRIMARY_STATS.get(descriptor.get("stat_family"), descriptor.get("stats") or [])
+        if not primary_stats:
+            continue
+        positive = sum(1 for stat in primary_stats if _safe_float(stat_features.get(stat)) > 0)
+        scores.append(positive / len(primary_stats))
+    return sum(scores) / len(scores) if scores else 0.0
+
+
 def _metadata_soft_match_score(row: dict[str, Any], parsed_query: dict[str, Any]) -> float:
     score = 0.0
     filters = parsed_query.get("filters") or {}
@@ -215,6 +250,50 @@ def _metadata_soft_match_score(row: dict[str, Any], parsed_query: dict[str, Any]
     if filters.get("nationality") and normalize_text(row.get("nationality")) == normalize_text(filters["nationality"]):
         score += 0.2
     return min(score, 1.0)
+
+
+def _minutes_reliability_score(row: dict[str, Any]) -> float:
+    return min(_safe_float(row.get("minutes")) / MINUTES_RELIABILITY_SATURATION, 1.0)
+
+
+def _effective_minutes_floor(parsed_query: dict[str, Any], filters: dict[str, Any]) -> int | None:
+    explicit_floor = filters.get("minutes_min")
+    if not parsed_query.get("is_named_player_similarity"):
+        return int(explicit_floor) if explicit_floor is not None else None
+    if parsed_query.get("has_low_sample_intent"):
+        return int(explicit_floor) if explicit_floor is not None else None
+    if explicit_floor is None:
+        return DEFAULT_NAMED_PLAYER_MINUTES_FLOOR
+    return max(int(explicit_floor), DEFAULT_NAMED_PLAYER_MINUTES_FLOOR)
+
+
+def _prepare_candidate_rows(parsed_query: dict[str, Any], filters: dict[str, Any]) -> list[dict[str, Any]]:
+    base_candidates = _candidate_rows(filters)
+    if not base_candidates:
+        return []
+
+    candidates = list(base_candidates)
+    if parsed_query.get("is_named_player_similarity"):
+        anchor_role_bucket = parsed_query.get("anchor_role_bucket")
+        if anchor_role_bucket and not filters.get("positions"):
+            candidates = [
+                row for row in candidates
+                if (row.get("role_bucket") or row.get("position")) == anchor_role_bucket
+            ]
+        anchor_player = parsed_query.get("anchor_player_normalized_name")
+        if anchor_player:
+            candidates = [
+                row for row in candidates
+                if row.get("normalized_name") != anchor_player
+            ]
+
+    minutes_floor = _effective_minutes_floor(parsed_query, filters)
+    if minutes_floor is not None:
+        candidates = [
+            row for row in candidates
+            if _safe_float(row.get("minutes")) >= float(minutes_floor)
+        ]
+    return candidates
 
 
 def _group_player_profiles(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -264,16 +343,13 @@ def _profile_scores(
         mean = matrix.mean(axis=0)
         std = matrix.std(axis=0)
         std = np.where(std == 0, 1.0, std)
-        normalized_matrix = np.nan_to_num(
-            np.clip((matrix - mean) / std, -5.0, 5.0),
-            nan=0.0,
-            posinf=0.0,
-            neginf=0.0,
-        )
+        normalized_matrix = _sanitize_vector((matrix - mean) / std)
         raw_query = query_vectors.get(bucket)
         if raw_query is None:
             raw_query = _style_weight_vector(parsed_query.get("style_descriptors") or [])
         normalized_query = _normalized_query_vector(raw_query, (mean, std), descriptor_only)
+        normalized_query = _sanitize_vector(normalized_query)
+        normalized_matrix = _sanitize_vector(normalized_matrix)
         row_scores = cosine_similarity(normalized_query.reshape(1, -1), normalized_matrix)[0]
         min_score = row_scores.min()
         max_score = row_scores.max()
@@ -287,12 +363,126 @@ def _style_matches(style_descriptors: list[dict[str, Any]]) -> list[dict[str, An
     return [{"term": item["term"], "stat_family": item["stat_family"]} for item in style_descriptors]
 
 
+def _build_row_hit(
+    row: dict[str, Any],
+    parsed_query: dict[str, Any],
+    retrieval_score: float,
+    stat_similarity: float = 0.0,
+    descriptor_match_score: float | None = None,
+    metadata_soft_match_score: float | None = None,
+    minutes_reliability_score: float | None = None,
+    style_stat_backing_score: float | None = None,
+) -> dict[str, Any]:
+    descriptor_score = (
+        _descriptor_match_score(row, parsed_query.get("style_descriptors") or [])
+        if descriptor_match_score is None
+        else descriptor_match_score
+    )
+    metadata_score = (
+        _metadata_soft_match_score(row, parsed_query)
+        if metadata_soft_match_score is None
+        else metadata_soft_match_score
+    )
+    minutes_score = (
+        _minutes_reliability_score(row)
+        if minutes_reliability_score is None
+        else minutes_reliability_score
+    )
+    style_backing_score = (
+        _style_stat_backing_score(row, parsed_query.get("style_descriptors") or [])
+        if style_stat_backing_score is None
+        else style_stat_backing_score
+    )
+    return {
+        "evidence_id": f"row_{row.get('row_id')}",
+        "source_type": "player_row",
+        "player_id": row.get("player_id"),
+        "player_name": row.get("name"),
+        "normalized_name": row.get("normalized_name"),
+        "season_id": row.get("season_id"),
+        "season_label": row.get("season_label"),
+        "team": row.get("team"),
+        "league": row.get("league"),
+        "position": row.get("position"),
+        "retrieval_score": retrieval_score,
+        "stat_similarity": stat_similarity,
+        "descriptor_match_score": descriptor_score,
+        "metadata_soft_match_score": metadata_score,
+        "minutes_reliability_score": minutes_score,
+        "style_stat_backing_score": style_backing_score,
+        "style_matches": _style_matches(parsed_query.get("style_descriptors") or []),
+        "raw_key_stats": {
+            key: value
+            for key, value in (row.get("stat_features") or {}).items()
+            if value is not None and key in {"minutes", "goals", "assists", "key_passes", "progressive_passes", "tackles", "interceptions"}
+        },
+        "provenance": {
+            "dataset": row.get("source_dataset"),
+            "row_id": row.get("row_id"),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        },
+        "is_aggregate_row": _is_aggregate_row(row),
+        "anchor_role_bucket": parsed_query.get("anchor_role_bucket"),
+    }
+
+
+def _anchor_row_sort_key(
+    row: dict[str, Any],
+    parsed_query: dict[str, Any],
+    filters: dict[str, Any],
+) -> tuple[Any, ...]:
+    year_range = filters.get("year_range")
+    row_years = row.get("season_years") or []
+    year_match = 1 if year_range and any(year_range[0] <= int(year) <= year_range[1] for year in row_years) else 0
+    if year_range and row_years:
+        in_range_years = [year for year in row_years if year_range[0] <= int(year) <= year_range[1]]
+        year_distance = min(abs(int(year) - year_range[1]) for year in in_range_years) if in_range_years else 9999
+    else:
+        year_distance = 9999
+    return (
+        -year_match,
+        -_style_stat_backing_score(row, parsed_query.get("style_descriptors") or []),
+        -_descriptor_match_score(row, parsed_query.get("style_descriptors") or []),
+        -_safe_float(row.get("minutes")),
+        str(row.get("season_label") or ""),
+        str(row.get("row_id") or ""),
+    )
+
+
+def build_anchor_evidence(
+    parsed_query: dict[str, Any],
+    filters: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not parsed_query.get("is_named_player_similarity"):
+        return None
+    anchor_name = parsed_query.get("anchor_player_name")
+    if not anchor_name:
+        return None
+    rows = [
+        row
+        for row in PLAYER_INDEX["player_list"]
+        if row.get("normalized_name") == parsed_query.get("anchor_player_normalized_name")
+        and _row_matches_filters(row, {**filters, "minutes_min": None})
+    ]
+    if not rows:
+        rows = PLAYER_INDEX.get("players_by_name", {}).get(parsed_query.get("anchor_player_normalized_name"), [])
+    if not rows:
+        return None
+    best_row = sorted(rows, key=lambda row: _anchor_row_sort_key(row, parsed_query, filters))[0]
+    return _build_row_hit(
+        best_row,
+        parsed_query,
+        retrieval_score=1.0,
+        stat_similarity=1.0,
+    )
+
+
 def _rank_rows(
     parsed_query: dict[str, Any],
     filters: dict[str, Any],
     top_k: int,
 ) -> list[dict[str, Any]]:
-    candidates = _candidate_rows(filters)
+    candidates = _prepare_candidate_rows(parsed_query, filters)
     if not candidates:
         return []
     normalized_by_bucket, bucket_stats = _normalized_bucket_vectors(candidates)
@@ -307,6 +497,8 @@ def _rank_rows(
         ]
         raw_query = query_vectors[bucket]
         normalized_query = _normalized_query_vector(raw_query, bucket_stats[bucket], descriptor_only)
+        normalized_query = _sanitize_vector(normalized_query)
+        normalized_matrix = _sanitize_vector(normalized_matrix)
         similarities = cosine_similarity(normalized_query.reshape(1, -1), normalized_matrix)[0]
         min_score = similarities.min()
         max_score = similarities.max()
@@ -315,38 +507,25 @@ def _rank_rows(
             stat_similarity = float((similarities[idx] - min_score) / denom)
             descriptor_match_score = _descriptor_match_score(row, parsed_query.get("style_descriptors") or [])
             metadata_soft_match_score = _metadata_soft_match_score(row, parsed_query)
+            minutes_reliability_score = _minutes_reliability_score(row)
+            style_stat_backing_score = _style_stat_backing_score(row, parsed_query.get("style_descriptors") or [])
             final_row_score = (
-                0.7 * stat_similarity
-                + 0.2 * descriptor_match_score
-                + 0.1 * metadata_soft_match_score
+                0.55 * stat_similarity
+                + 0.10 * descriptor_match_score
+                + 0.10 * metadata_soft_match_score
+                + 0.20 * minutes_reliability_score
+                + 0.05 * style_stat_backing_score
             )
-            hit = {
-                "evidence_id": f"row_{row.get('row_id')}",
-                "source_type": "player_row",
-                "player_id": row.get("player_id"),
-                "player_name": row.get("name"),
-                "normalized_name": row.get("normalized_name"),
-                "season_id": row.get("season_id"),
-                "season_label": row.get("season_label"),
-                "team": row.get("team"),
-                "league": row.get("league"),
-                "position": row.get("position"),
-                "retrieval_score": final_row_score,
-                "stat_similarity": stat_similarity,
-                "descriptor_match_score": descriptor_match_score,
-                "metadata_soft_match_score": metadata_soft_match_score,
-                "style_matches": _style_matches(parsed_query.get("style_descriptors") or []),
-                "raw_key_stats": {
-                    key: value
-                    for key, value in (row.get("stat_features") or {}).items()
-                    if value is not None and key in {"minutes", "goals", "assists", "key_passes", "progressive_passes", "tackles", "interceptions"}
-                },
-                "provenance": {
-                    "dataset": row.get("source_dataset"),
-                    "row_id": row.get("row_id"),
-                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
-                },
-            }
+            hit = _build_row_hit(
+                row,
+                parsed_query,
+                retrieval_score=final_row_score,
+                stat_similarity=stat_similarity,
+                descriptor_match_score=descriptor_match_score,
+                metadata_soft_match_score=metadata_soft_match_score,
+                minutes_reliability_score=minutes_reliability_score,
+                style_stat_backing_score=style_stat_backing_score,
+            )
             scored_hits.append(hit)
     scored_hits.sort(
         key=lambda hit: (
@@ -368,13 +547,18 @@ def _group_player_results(
     for hit in row_hits:
         grouped[normalize_text(hit["player_name"])].append(hit)
 
-    profiles = _group_player_profiles(
-        [
-            row
-            for row in PLAYER_INDEX["player_list"]
-            if normalize_text(row.get("name")) in grouped
+    profile_source_rows = [
+        row
+        for row in PLAYER_INDEX["player_list"]
+        if normalize_text(row.get("name")) in grouped
+    ]
+    if parsed_query.get("is_named_player_similarity") and parsed_query.get("anchor_role_bucket"):
+        anchor_role_bucket = parsed_query["anchor_role_bucket"]
+        profile_source_rows = [
+            row for row in profile_source_rows
+            if (row.get("role_bucket") or row.get("position")) == anchor_role_bucket
         ]
-    )
+    profiles = _group_player_profiles(profile_source_rows)
     profile_scores = _profile_scores(profiles, parsed_query)
     results: list[dict[str, Any]] = []
     for normalized_name, hits in grouped.items():
@@ -487,31 +671,12 @@ def retrieve_comparison_targets(
         }
         for idx, row in enumerate(supporting):
             hit = {
-                "evidence_id": f"row_{row.get('row_id')}",
-                "source_type": "player_row",
-                "player_id": row.get("player_id"),
-                "player_name": row.get("name"),
-                "normalized_name": row.get("normalized_name"),
-                "season_id": row.get("season_id"),
-                "season_label": row.get("season_label"),
-                "team": row.get("team"),
-                "league": row.get("league"),
-                "position": row.get("position"),
-                "retrieval_score": 1.0 - (idx * 0.05),
-                "stat_similarity": 0.0,
-                "descriptor_match_score": _descriptor_match_score(row, parsed_query.get("style_descriptors") or []),
-                "metadata_soft_match_score": _metadata_soft_match_score(row, parsed_query),
-                "style_matches": _style_matches(parsed_query.get("style_descriptors") or []),
-                "raw_key_stats": {
-                    key: value
-                    for key, value in (row.get("stat_features") or {}).items()
-                    if value is not None and key in {"minutes", "goals", "assists", "key_passes", "progressive_passes", "tackles", "interceptions"}
-                },
-                "provenance": {
-                    "dataset": row.get("source_dataset"),
-                    "row_id": row.get("row_id"),
-                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
-                },
+                **_build_row_hit(
+                    row,
+                    parsed_query,
+                    retrieval_score=1.0 - (idx * 0.05),
+                    stat_similarity=0.0,
+                )
             }
             comparison_hits.append(hit)
             player_result["supporting_rows"].append(hit)
@@ -539,6 +704,7 @@ def retrieve_ranked_players(
     max_supporting_rows_per_player: int = 2,
 ) -> dict[str, Any]:
     row_hits = _rank_rows(parsed_query, filters, top_k=top_k)
+    anchor_hit = build_anchor_evidence(parsed_query, filters)
     results = _group_player_results(
         row_hits,
         parsed_query,
@@ -547,6 +713,10 @@ def retrieve_ranked_players(
     )
     retrieval_confidence = _compute_retrieval_confidence(parsed_query.get("confidence", 0.0), row_hits)
     warnings: list[str] = []
+    top_hits = row_hits[: min(3, len(row_hits))]
+    if any(hit.get("is_aggregate_row") for hit in top_hits) or (anchor_hit and anchor_hit.get("is_aggregate_row")):
+        warnings.append("Evidence uses aggregate multi-year row data for some candidates.")
+        retrieval_confidence = max(0.0, retrieval_confidence - 0.08)
     if retrieval_confidence < RETRIEVAL_CONFIDENCE_WARN_THRESHOLD:
         warnings.append("Low retrieval confidence; answer may be incomplete.")
     if not row_hits:
@@ -555,11 +725,15 @@ def retrieve_ranked_players(
         "retrieval_mode": parsed_query.get("mode") or "season",
         "results": results,
         "hits": row_hits,
+        "anchor_hit": anchor_hit,
         "retrieval_confidence": retrieval_confidence,
         "warnings": warnings,
         "debug": {
-            "candidate_count": len(_candidate_rows(filters)),
+            "candidate_count": len(_prepare_candidate_rows(parsed_query, filters)),
             "row_hit_count": len(row_hits),
             "rewrite_threshold": RETRIEVAL_CONFIDENCE_REWRITE_THRESHOLD,
+            "anchor_role_bucket": parsed_query.get("anchor_role_bucket"),
+            "anchor_player_name": parsed_query.get("anchor_player_name"),
+            "minutes_floor": _effective_minutes_floor(parsed_query, filters),
         },
     }

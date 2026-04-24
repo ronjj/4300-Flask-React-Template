@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { SyntheticEvent, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlayerCardData } from "../types";
 import RadarChart from "./RadarChart";
@@ -73,15 +73,15 @@ function PlayerProfile({ player, onClose }: Props): JSX.Element {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: SyntheticEvent<HTMLDivElement>) => e.stopPropagation()}
           >
             <div className="profile-hero">
               <img
                 className="profile-hero-img"
                 src={player.image || fallbackImage}
                 alt={player.name}
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = fallbackImage;
+                onError={(e: SyntheticEvent<HTMLImageElement>) => {
+                  e.currentTarget.src = fallbackImage;
                 }}
               />
               <div className="profile-hero-gradient" />

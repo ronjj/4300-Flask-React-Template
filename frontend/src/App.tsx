@@ -5,7 +5,7 @@ import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats } from "./types";
+import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -103,7 +103,6 @@ function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
-  const [svdCompare, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [heroMode, setHeroMode] = useState<boolean>(false);
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(null);
@@ -176,7 +175,6 @@ function App(): JSX.Element {
     const trimmed = term.trim();
     if (trimmed === "") {
       setPlayers([]);
-      setSvdCompare(null);
       setStatus("idle");
       return;
     }
@@ -186,7 +184,6 @@ function App(): JSX.Element {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
         setPlayers([]);
-        setSvdCompare(null);
         setStatus("error");
         return;
       }
@@ -194,23 +191,9 @@ function App(): JSX.Element {
       const results = Array.isArray(data.results) ? data.results : [];
       const nextPlayers = toCardData(results);
       setPlayers(nextPlayers);
-      if (
-        data.svd_available &&
-        data.results_without_svd != null &&
-        data.results_svd != null
-      ) {
-        setSvdCompare({
-          without: toCardData(data.results_without_svd),
-          with: toCardData(data.results_svd),
-          legend: data.svd_latent_dimensions ?? [],
-        });
-      } else {
-        setSvdCompare(null);
-      }
       setStatus(nextPlayers.length > 0 ? "populated" : "empty");
     } catch {
       setPlayers([]);
-      setSvdCompare(null);
       setStatus("error");
     }
   };
@@ -240,7 +223,7 @@ function App(): JSX.Element {
         if (!Array.isArray(data.results) || data.results.length === 0) return;
 
         const lastName = normalizeName(player.name.split(" ").pop()!);
-        const match = data.results.find((r) => normalizeName(r.name).includes(lastName));
+        const match = data.results.find((r: PlayerStats) => normalizeName(r.name).includes(lastName));
         if (!match) return;
 
         const enriched = toCardData([match])[0];

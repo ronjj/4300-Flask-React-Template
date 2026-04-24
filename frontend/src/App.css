@@ -519,6 +519,46 @@
   margin-right: auto;
 }
 
+.chat-meta {
+  margin: 8px 0 0;
+  max-width: min(820px, 90%);
+  padding-left: 4px;
+}
+
+.chat-meta-line {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.chat-meta-block {
+  margin: 0 0 10px;
+}
+
+.chat-meta-title {
+  margin: 0 0 4px;
+  color: rgba(255, 255, 255, 0.96);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.chat-meta-list {
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.chat-meta-list li {
+  margin: 0 0 2px;
+}
+
 .loading-indicator {
   display: none;
   align-items: center;
