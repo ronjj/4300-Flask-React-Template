@@ -5,7 +5,7 @@ import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats, SearchResponse, SvdLegendEntry } from "./types";
+import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -85,12 +85,6 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 type SearchStatus = "idle" | "loading" | "populated" | "empty" | "error";
 type SearchMode = string | null;
 
-interface SvdCompareState {
-  without: PlayerCardData[];
-  with: PlayerCardData[];
-  legend: SvdLegendEntry[];
-}
-
 function toCardData(results: PlayerStats[]): PlayerCardData[] {
   return results.map((player, index) => ({
     key: `${player.name}-${player.team ?? "unknown"}-${player.league ?? "unknown"}-${index}`,
@@ -110,7 +104,6 @@ function App(): JSX.Element {
   const [useLlm, setUseLlm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
-  const [, setSvdCompare] = useState<SvdCompareState | null>(null);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);

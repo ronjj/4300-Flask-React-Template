@@ -34,4 +34,6 @@ vite.config.ts*
 data/reddit.csv
 data/bbc_data/
 
+P05.md
+
 tests/*

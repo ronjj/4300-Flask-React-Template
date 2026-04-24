@@ -1,4 +1,4 @@
-import { useEffect, MouseEvent } from "react";
+import { useEffect, MouseEvent, SyntheticEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlayerCardData, SvdDimensionExplain, SvdExplain } from "../types";
 import RadarChart from "./RadarChart";
