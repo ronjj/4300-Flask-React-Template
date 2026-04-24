@@ -16,7 +16,7 @@ REQUIRED_EVIDENCE_FIELDS = (
     "matched_filters",
     "provenance",
 )
-OPTIONAL_DROP_ORDER = ("style_matches", "key_stats")
+OPTIONAL_DROP_ORDER = ("style_matches",)
 
 
 def build_evidence_record(
@@ -117,47 +117,27 @@ def _prompt_key_stats(record: dict[str, Any]) -> dict[str, Any]:
 def _format_prompt_record(record: dict[str, Any], context_label: str) -> str:
     key_stats = _prompt_key_stats(record)
     style_matches = record.get("style_matches") or []
-    title = "Anchor" if context_label == "anchor" else "Candidate"
+    style_text = "; ".join(
+        f"{item.get('term')} -> {item.get('stat_family')}"
+        if item.get("stat_family")
+        else str(item.get("term") or "")
+        for item in style_matches
+        if item.get("term")
+    ) or "none"
     lines = [
-        f"{title}: {record['player_name']}",
-        "",
-        "key_stats:",
+        f"Player: {record['player_name']}",
+        f"Evidence ID: {record.get('evidence_id') or 'unknown'}",
+        f"Position: {record.get('position') or 'unknown'}",
+        f"Team: {record.get('team') or 'unknown'}",
+        f"League: {record.get('league') or 'unknown'}",
+        f"Season/row: {record.get('season_label') or 'unknown'}",
+        f"Retrieval score: {record.get('retrieval_score')}",
+        f"Style match: {style_text}",
     ]
-    preferred_order = ("progressive_passes", "key_passes", "assists", "interceptions", "tackles", "minutes")
-    emitted: set[str] = set()
-    for key in preferred_order:
-        if key in key_stats:
-            lines.append(f"- {key}: {key_stats[key]}")
-            emitted.add(key)
-    for key in sorted(key_stats):
-        if key in emitted or key == "minutes":
-            continue
-        lines.append(f"- {key}: {key_stats[key]}")
-    if len(lines) > 0 and lines[-1] == "key_stats:":
-        lines.append("- none")
-    lines.extend(
-        [
-            "",
-            "Context:",
-            f"- position: {record.get('position') or 'unknown'}",
-            f"- team: {record.get('team') or 'unknown'}",
-            f"- season: {record.get('season_label') or 'unknown'}",
-            f"- league: {record.get('league') or 'unknown'}",
-            "- style_matches:",
-        ]
-    )
-    if style_matches:
-        for item in style_matches:
-            lines.append(f"- {item.get('term')}")
+    if key_stats:
+        lines.append(f"Key stats: {_format_key_stats_summary(key_stats)}")
     else:
-        lines.append("- none")
-    if context_label == "candidate":
-        if "progressive_passes" not in key_stats:
-            lines.append("limitation: no progressive_passes recorded in this row")
-        if not any(stat in key_stats for stat in ("key_passes", "assists")):
-            lines.append("limitation: no key_passes or assists recorded in this row")
-        if not any(stat in key_stats for stat in ("tackles", "interceptions")):
-            lines.append("limitation: no tackles or interceptions recorded in this row")
+        lines.append("key_stats: unavailable")
     lines.extend(
         [
             f"aggregate_row: {bool(record.get('is_aggregate_row'))}",
@@ -165,3 +145,35 @@ def _format_prompt_record(record: dict[str, Any], context_label: str) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _format_key_stats_summary(key_stats: dict[str, Any]) -> str:
+    ordered_stats = (
+        "assists",
+        "key_passes",
+        "progressive_passes",
+        "goals",
+        "interceptions",
+        "tackles",
+        "minutes",
+    )
+    labels = {
+        "assists": "assists",
+        "key_passes": "key passes",
+        "progressive_passes": "progressive passes",
+        "goals": "goals",
+        "tackles": "tackles",
+        "interceptions": "interceptions",
+        "minutes": "minutes",
+    }
+    parts: list[str] = []
+    emitted: set[str] = set()
+    for key in ordered_stats:
+        if key in key_stats:
+            parts.append(f"{key_stats[key]} {labels[key]}")
+            emitted.add(key)
+    for key in sorted(key_stats):
+        if key in emitted:
+            continue
+        parts.append(f"{key_stats[key]} {key.replace('_', ' ')}")
+    return ", ".join(parts)

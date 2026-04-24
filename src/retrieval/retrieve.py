@@ -624,19 +624,18 @@ def retrieve_comparison_targets(
     top_k_per_target: int = 8,
     max_supporting_rows_per_target: int = 2,
 ) -> dict[str, Any]:
-    target_players = parsed_query.get("entities", {}).get("players") or []
+    target_players = parsed_query.get("comparison_player_names") or parsed_query.get("entities", {}).get("players") or []
     warnings: list[str] = []
     if len(target_players) < 2:
-        warnings.append("Comparison queries require at least two named players; falling back to standard retrieval.")
-        fallback = retrieve_ranked_players(
-            parsed_query,
-            filters,
-            top_k=top_k_per_target,
-            max_players=2,
-            max_supporting_rows_per_player=max_supporting_rows_per_target,
-        )
-        fallback["warnings"].extend(warnings)
-        return fallback
+        warnings.append("Comparison queries require at least two named players.")
+        return {
+            "retrieval_mode": "player",
+            "results": [],
+            "hits": [],
+            "retrieval_confidence": 0.0,
+            "warnings": warnings,
+            "debug": {"comparison_targets": target_players, "candidate_count": 0},
+        }
 
     rows = _candidate_rows(filters)
     grouped_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -647,9 +646,12 @@ def retrieve_comparison_targets(
 
     comparison_hits: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
+    missing_players: list[str] = []
     for player in target_players:
         normalized_target = normalize_text(player)
         player_rows = grouped_rows.get(normalized_target, [])
+        if not player_rows:
+            missing_players.append(player)
         player_rows.sort(
             key=lambda row: (
                 -_descriptor_match_score(row, parsed_query.get("style_descriptors") or []),
@@ -683,6 +685,8 @@ def retrieve_comparison_targets(
         results.append(player_result)
 
     retrieval_confidence = _compute_retrieval_confidence(parsed_query.get("confidence", 0.0), comparison_hits)
+    for player in missing_players:
+        warnings.append(f"I found no evidence for {player} under the requested filters.")
     return {
         "retrieval_mode": "player",
         "results": results,
@@ -692,6 +696,7 @@ def retrieve_comparison_targets(
         "debug": {
             "candidate_count": len(rows),
             "comparison_targets": target_players,
+            "missing_players": missing_players,
         },
     }
 

@@ -33,3 +33,5 @@ vite.config.ts*
 # Large data files
 data/reddit.csv
 data/bbc_data/
+
+tests/*

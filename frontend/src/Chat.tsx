@@ -5,6 +5,7 @@ import { PlayerChatEvidence, PlayerChatResponse, PlayerChatResult } from './type
 interface Message {
   isUser: boolean
   text: string
+  rewrittenQuery?: string | null
   results?: PlayerChatResult[]
   evidence?: PlayerChatEvidence[]
   retrievalConfidence?: number | null
@@ -26,6 +27,14 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  const formatKeyStats = (stats?: Record<string, unknown>): string[] => {
+    if (!stats) return []
+    return Object.entries(stats)
+      .filter(([, value]) => value != null)
+      .slice(0, 3)
+      .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${String(value)}`)
+  }
 
   const resetInactivityTimer = (timeoutMs: number): void => {
     if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
@@ -74,6 +83,7 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
       const results = Array.isArray(data.results) ? data.results : []
       const warnings = Array.isArray(data.warnings) ? data.warnings : []
       const evidence = Array.isArray(data.evidence) ? data.evidence : []
+      const rewrittenQuery = typeof data.rewritten_query === 'string' ? data.rewritten_query : null
       const retrievalConfidence =
         typeof data.retrieval_confidence === 'number' ? data.retrieval_confidence : null
 
@@ -82,6 +92,7 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
         {
           text: answer,
           isUser: false,
+          rewrittenQuery,
           results,
           evidence,
           retrievalConfidence,
@@ -118,8 +129,14 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
             <p>{msg.text}</p>
             {!msg.isUser && (
               <>
-                {(msg.retrievalConfidence != null || (msg.results?.length ?? 0) > 0 || (msg.warnings?.length ?? 0) > 0) && (
+                {(msg.rewrittenQuery != null || msg.retrievalConfidence != null || (msg.results?.length ?? 0) > 0 || (msg.evidence?.length ?? 0) > 0 || (msg.warnings?.length ?? 0) > 0) && (
                   <div className="chat-meta">
+                    {msg.rewrittenQuery && (
+                      <div className="chat-meta-block">
+                        <p className="chat-meta-title">IR query</p>
+                        <p className="chat-meta-line">{msg.rewrittenQuery}</p>
+                      </div>
+                    )}
                     {msg.retrievalConfidence != null && (
                       <p className="chat-meta-line">
                         Retrieval confidence: {msg.retrievalConfidence.toFixed(3)}
@@ -134,6 +151,30 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
                               {[result.player_name, result.team].filter(Boolean).join(' · ') || 'Unnamed player'}
                             </li>
                           ))}
+                        </ul>
+                      </div>
+                    )}
+                    {(msg.evidence?.length ?? 0) > 0 && (
+                      <div className="chat-meta-block">
+                        <p className="chat-meta-title">Retrieved evidence</p>
+                        <ul className="chat-meta-list">
+                          {msg.evidence?.slice(0, 3).map((item, evidenceIndex) => {
+                            const details = [
+                              item.player_name,
+                              item.team,
+                              item.season_label,
+                              typeof item.retrieval_score === 'number'
+                                ? `score ${item.retrieval_score.toFixed(3)}`
+                                : null,
+                            ].filter(Boolean)
+                            const stats = formatKeyStats(item.key_stats)
+                            return (
+                              <li key={`${item.evidence_id ?? item.player_name ?? 'evidence'}-${evidenceIndex}`}>
+                                <div>{details.join(' · ')}</div>
+                                {stats.length > 0 && <div>{stats.join(' | ')}</div>}
+                              </li>
+                            )
+                          })}
                         </ul>
                       </div>
                     )}

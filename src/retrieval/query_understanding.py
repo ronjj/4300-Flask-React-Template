@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -62,6 +63,14 @@ COMPARISON_SPLIT_PATTERNS = (
     re.compile(r"\bversus\b", re.IGNORECASE),
     re.compile(r"\bcompare\b", re.IGNORECASE),
 )
+DIRECT_COMPARISON_PATTERNS = (
+    re.compile(r"^\s*compare\s+(?P<left>.+?)\s+vs\.?\s+(?P<right>.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?P<left>.+?)\s+vs\.?\s+(?P<right>.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*compare\s+(?P<left>.+?)\s+and\s+(?P<right>.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*difference\s+between\s+(?P<left>.+?)\s+and\s+(?P<right>.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*who\s+is\s+better,?\s+(?P<left>.+?)\s+or\s+(?P<right>.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(?P<left>.+?)\s+compared\s+to\s+(?P<right>.+?)\s*$", re.IGNORECASE),
+)
 SIMILARITY_PATTERNS = (
     re.compile(r"players?\s+like\s+(.+?)(?:\s+with|\s+from|\s+in|$)", re.IGNORECASE),
     re.compile(r"similar\s+to\s+(.+?)(?:\s+with|\s+from|\s+in|$)", re.IGNORECASE),
@@ -105,6 +114,31 @@ DISPLAY_NAME_MAP = {
     for records in PLAYER_INDEX["players_by_name"].values()
     if records and records[0].get("name")
 }
+
+
+def rewrite_player_chat_query(message: str) -> str:
+    api_key = os.getenv("API_KEY")
+    if not api_key:
+        return message
+
+    from infosci_spark_client import LLMClient
+
+    client = LLMClient(api_key=api_key)
+    response = client.chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Rewrite the user's soccer player search request into a compact retrieval query. "
+                    "Keep the original intent, named players, leagues, eras, positions, nationalities, and style terms. "
+                    "Do not answer the question. Do not add explanation. Output only the rewritten retrieval query."
+                ),
+            },
+            {"role": "user", "content": message},
+        ]
+    )
+    rewritten = (response.get("content") or "").strip()
+    return rewritten or message
 
 
 def _extract_year_range(query: str) -> tuple[list[int] | None, bool]:
@@ -182,7 +216,11 @@ def _extract_players(query: str) -> list[str]:
     normalized = normalize_text(query)
     resolved: list[str] = []
 
-    if any(pattern.search(query) for pattern in COMPARISON_SPLIT_PATTERNS):
+    comparison_players = _extract_comparison_players(query)
+    if comparison_players:
+        resolved.extend(comparison_players)
+
+    if not resolved and any(pattern.search(query) for pattern in COMPARISON_SPLIT_PATTERNS):
         split_query = re.split(r"\bvs\.?\b|\bversus\b", query, maxsplit=1, flags=re.IGNORECASE)
         if len(split_query) == 2:
             left = re.sub(r"\bcompare\b", "", split_query[0], flags=re.IGNORECASE).strip()
@@ -210,6 +248,30 @@ def _extract_players(query: str) -> list[str]:
                 if len(resolved) >= 2:
                     break
 
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for name in resolved:
+        key = normalize_text(name)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(name)
+    return deduped
+
+
+def _extract_comparison_players(query: str) -> list[str]:
+    resolved: list[str] = []
+    for pattern in DIRECT_COMPARISON_PATTERNS:
+        match = pattern.search(query)
+        if not match:
+            continue
+        left = match.group("left").strip()
+        right = match.group("right").strip()
+        for fragment in (left, right):
+            resolved_name = _resolve_player_name(fragment)
+            if resolved_name:
+                resolved.append(resolved_name)
+        break
     deduped: list[str] = []
     seen: set[str] = set()
     for name in resolved:
@@ -296,7 +358,9 @@ def parse_player_chat_query(message: str) -> dict[str, Any]:
     has_similarity_language = bool(re.search(r"\b(like|similar|most like)\b", normalized))
     has_comparison_language = bool(re.search(r"\b(vs|versus|compare|comparison)\b", normalized))
     has_low_sample_intent = any(keyword in normalized for keyword in LOW_SAMPLE_KEYWORDS)
-    anchor_player_name = players[0] if players else None
+    comparison_player_names = _extract_comparison_players(message)
+    is_direct_player_comparison = len(comparison_player_names) >= 2
+    anchor_player_name = None if is_direct_player_comparison else (players[0] if players else None)
     anchor_role_bucket, anchor_compatible_positions = _infer_anchor_role(anchor_player_name)
 
     filters: dict[str, Any] = {
@@ -315,6 +379,8 @@ def parse_player_chat_query(message: str) -> dict[str, Any]:
         filters["nationality_region"] = sorted(nationality_region)
 
     intent = _infer_intent(normalized, players)
+    if is_direct_player_comparison:
+        intent = "comparison"
     mode = _infer_mode(
         has_named_player=bool(players),
         has_explicit_era=has_explicit_era,
@@ -336,6 +402,8 @@ def parse_player_chat_query(message: str) -> dict[str, Any]:
         "intent": intent,
         "mode": mode,
         "comparison_target_count": len(players) if intent == "comparison" else 0,
+        "comparison_player_names": comparison_player_names,
+        "is_direct_player_comparison": is_direct_player_comparison,
         "entities": {
             "players": players,
             "teams": [],
@@ -352,7 +420,7 @@ def parse_player_chat_query(message: str) -> dict[str, Any]:
         "anchor_player_normalized_name": normalize_text(anchor_player_name) if anchor_player_name else None,
         "anchor_role_bucket": anchor_role_bucket,
         "anchor_compatible_positions": anchor_compatible_positions,
-        "is_named_player_similarity": intent == "similarity" and bool(anchor_player_name),
+        "is_named_player_similarity": (not is_direct_player_comparison) and intent == "similarity" and bool(anchor_player_name),
         "has_low_sample_intent": has_low_sample_intent,
         "parser_flags": {
             "has_named_player": bool(players),

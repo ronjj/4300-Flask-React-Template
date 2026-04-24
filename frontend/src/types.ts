@@ -93,6 +93,7 @@ export interface PlayerChatEvidence {
 
 export interface PlayerChatResponse {
   answer?: string
+  rewritten_query?: string | null
   results?: PlayerChatResult[]
   evidence?: PlayerChatEvidence[]
   retrieval_confidence?: number | null

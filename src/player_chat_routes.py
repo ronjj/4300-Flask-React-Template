@@ -7,12 +7,12 @@ from flask import jsonify, request
 try:
     from retrieval.evidence import build_evidence_record
     from retrieval.generate import generate_grounded_answer
-    from retrieval.query_understanding import parse_player_chat_query, resolve_filters
+    from retrieval.query_understanding import parse_player_chat_query, resolve_filters, rewrite_player_chat_query
     from retrieval.retrieve import retrieve_comparison_targets, retrieve_ranked_players
 except ImportError:  # pragma: no cover
     from src.retrieval.evidence import build_evidence_record
     from src.retrieval.generate import generate_grounded_answer
-    from src.retrieval.query_understanding import parse_player_chat_query, resolve_filters
+    from src.retrieval.query_understanding import parse_player_chat_query, resolve_filters, rewrite_player_chat_query
     from src.retrieval.retrieve import retrieve_comparison_targets, retrieve_ranked_players
 
 
@@ -24,7 +24,16 @@ def register_player_chat_route(app) -> None:
         if not message:
             return jsonify({"error": "Message is required"}), 400
 
-        parsed_query = parse_player_chat_query(message)
+        rewritten_query = message
+        rewrite_warning = None
+        try:
+            rewritten_query = rewrite_player_chat_query(message).strip() or message
+        except RuntimeError as exc:
+            rewrite_warning = f"LLM query rewrite unavailable: {exc}"
+        except Exception as exc:  # pragma: no cover - defensive route handling
+            rewrite_warning = f"LLM query rewrite failed: {exc}"
+
+        parsed_query = parse_player_chat_query(rewritten_query)
         request_filters = data.get("filters") or {}
         resolved_filters, precedence_warnings = resolve_filters(
             parsed_query.get("filters") or {},
@@ -55,6 +64,8 @@ def register_player_chat_route(app) -> None:
             )
 
         warnings = list(parsed_query.get("warnings") or [])
+        if rewrite_warning:
+            warnings.append(rewrite_warning)
         warnings.extend(precedence_warnings)
         warnings.extend(retrieval.get("warnings") or [])
 
@@ -86,6 +97,7 @@ def register_player_chat_route(app) -> None:
                 evidence=evidence,
                 retrieval_confidence=float(retrieval.get("retrieval_confidence", 0.0)),
                 anchor_evidence=anchor_evidence,
+                comparison_player_names=parsed_query.get("comparison_player_names"),
                 include_debug=bool(data.get("debug")),
             )
         except RuntimeError as exc:
@@ -95,6 +107,7 @@ def register_player_chat_route(app) -> None:
 
         response: dict[str, Any] = {
             "answer": answer,
+            "rewritten_query": rewritten_query,
             "retrieval_mode": retrieval["retrieval_mode"],
             "applied_filters": resolved_filters,
             "results": retrieval.get("results") or [],
