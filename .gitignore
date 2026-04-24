@@ -32,4 +32,4 @@ vite.config.ts*
 
 # Large data files
 data/reddit.csv
-data/bbc_data/
+data/bbc_data/bbc_articles.csv
