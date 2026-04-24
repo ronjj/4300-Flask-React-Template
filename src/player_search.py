@@ -725,6 +725,13 @@ def parse_query(query: str) -> Dict[str, Any]:
 
     if re.search(r"\bclinical\b", text):
         filters["sort_by"] = "shot_on_target_ratio"
+    elif re.search(
+        r"\b(top|best)\s+scorers?\b|\btop\s+goalscorers?\b|\bmost\s+goals?\b|\bgolden\s+boot\b",
+        text,
+    ):
+        # Composite scorer ranking: still goal-first, but uses efficiency signals to break ties
+        # and avoid “weird” ordering in filtered subsets.
+        filters["sort_by"] = "scorer_score"
     elif re.search(r"\b(tekky|technical|silky|baller|skillful)\b", text):
         filters["sort_by"] = "tekky_score"
     elif re.search(r"\bfree\s*kicks?\b|\bfk\b|\bset\s*pieces?\b", text):
@@ -803,6 +810,29 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             return float("inf")
         return -float(value)
 
+    def scorer_score(player: Dict[str, Any]) -> Optional[float]:
+        """
+        Goal-scoring rank signal.
+
+        Prioritizes total goals heavily, then uses goals-per-game and a couple finishing-volume
+        proxies to produce a more intuitive ordering inside filtered result sets.
+        """
+        goals = safe_int(player.get("goals"))
+        if goals is None:
+            return None
+        apps = safe_int(player.get("appearances"))
+        gpg = (goals / apps) if (apps is not None and apps > 0) else 0.0
+        # Damp efficiency for tiny samples (keeps “top scorers” sane).
+        sample = float(min(1.0, (apps or 0) / 10.0)) if apps is not None else 0.0
+        gpg_adj = gpg * sample
+
+        sot = safe_int(player.get("shots_on_target")) or 0
+        minutes = safe_int(player.get("minutes")) or 0
+        g90 = (goals * 90.0 / minutes) if minutes > 0 else 0.0
+
+        # Strongly goal-first: other terms are light tie-breakers.
+        return float(goals) * 100.0 + float(gpg_adj) * 20.0 + float(g90) * 2.0 + float(sot) * 0.02
+
     def freekick_score(player: Dict[str, Any]) -> Optional[float]:
         """
         Best-effort free-kick ranking signal across heterogeneous leagues.
@@ -834,14 +864,19 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             return None
         return float((dr or 0)) * 1.0 + float((pp or 0)) * 0.35 + float((kp or 0)) * 0.75
 
+    def primary_sort_value(player: Dict[str, Any]) -> Any:
+        if sort_by == "freekick_score":
+            return freekick_score(player)
+        if sort_by == "tekky_score":
+            return tekky_score(player)
+        if sort_by == "scorer_score":
+            return scorer_score(player)
+        return player.get(sort_by)
+
     sorted_results = sorted(
         results,
         key=lambda player: (
-            descending_number(
-                freekick_score(player)
-                if sort_by == "freekick_score"
-                else (tekky_score(player) if sort_by == "tekky_score" else player.get(sort_by))
-            ),
+            descending_number(primary_sort_value(player)),
             descending_number(player.get("goals")),
             player.get("name", "").casefold(),
         ),

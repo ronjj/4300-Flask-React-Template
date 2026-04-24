@@ -622,6 +622,10 @@ def search_players(query: str) -> Dict[str, Any]:
                 "boolean_svd",
                 top_k=10,
             )
+            # For boolean queries, user expectation is deterministic column sorting (the
+            # `boolean_search` output). Keep SVD rerank as an optional comparison only.
+            response["results"] = boolean_results
+            response["results_without_svd"] = boolean_results
             if fk_mode:
                 ranked = sorted(
                     (p for p in candidates if p.get("set_piece_goals") is not None),
@@ -632,12 +636,14 @@ def search_players(query: str) -> Dict[str, Any]:
                     {**serialize_player(p), "similarity_score": None, "search_mode": "boolean_svd"}
                     for p in ranked
                 ]
+                response["results"] = response.get("results_without_svd") or []
             if tekky_mode:
                 ranked = sorted(candidates, key=tekky_score, reverse=True)[:10]
                 response["results_without_svd"] = [
                     {**serialize_player(p), "similarity_score": None, "search_mode": "boolean_svd"}
                     for p in ranked
                 ]
+                response["results"] = response.get("results_without_svd") or []
             if league or allowed_meta_positions:
                 for key in ("results", "results_svd", "results_without_svd"):
                     hits = response.get(key) or []
