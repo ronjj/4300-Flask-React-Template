@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, useScroll, useTransform } from "framer-motion";
+import ReactMarkdown from "react-markdown";
 import "./App.css";
-import Chat from "./Chat";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerStats, SearchResponse } from "./types";
+import { PlayerCardData, PlayerChatResponse, PlayerStats, SearchResponse } from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
 import searchSvg from "./assets/search.svg";
@@ -101,7 +101,16 @@ function toCardData(results: PlayerStats[]): PlayerCardData[] {
 }
 
 function App(): JSX.Element {
-  const [useLlm, setUseLlm] = useState<boolean>(false);
+  const [useLlm, setUseLlm] = useState<boolean>(true);
+  const [aiMode, setAiMode] = useState<boolean>(false);
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiMeta, setAiMeta] = useState<{
+    rewrittenQuery?: string | null;
+    retrievalConfidence?: number | null;
+    results?: import("./types").PlayerChatResult[];
+    evidence?: import("./types").PlayerChatEvidence[];
+    warnings?: string[];
+  } | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [status, setStatus] = useState<SearchStatus>("idle");
@@ -183,6 +192,8 @@ function App(): JSX.Element {
     scrollToShell();
     setStatus("loading");
     setSearchMode(null);
+    setAiAnswer(null);
+    setAiMeta(null);
     try {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
@@ -222,9 +233,46 @@ function App(): JSX.Element {
     }
   };
 
-  const handleChatSearch = (term: string): void => {
-    setSearchTerm(term);
-    void runSearch(term);
+  const runAiSearch = async (term: string): Promise<void> => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    scrollToShell();
+    setStatus("loading");
+    setAiAnswer(null);
+    setAiMeta(null);
+    setSearchMode(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/player-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: trimmed }),
+      });
+      const data: PlayerChatResponse = await response.json();
+      if (!response.ok) {
+        setPlayers([]);
+        setStatus("error");
+        return;
+      }
+      const answer = data.answer || null;
+      const meta = {
+        rewrittenQuery: data.rewritten_query ?? null,
+        retrievalConfidence: data.retrieval_confidence ?? null,
+        results: Array.isArray(data.results) ? data.results : [],
+        evidence: Array.isArray(data.evidence) ? data.evidence : [],
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+      };
+      const queryForGrid =
+        (typeof data.rewritten_query === "string" && data.rewritten_query) ||
+        (Array.isArray(data.results) && data.results[0]?.player_name) ||
+        trimmed;
+      await runSearch(queryForGrid);
+      // Set after runSearch so it doesn't get cleared by runSearch's reset
+      if (answer) setAiAnswer(answer);
+      setAiMeta(meta);
+    } catch {
+      setPlayers([]);
+      setStatus("error");
+    }
   };
 
   const activeFetchId = useRef(0);
@@ -327,8 +375,11 @@ function App(): JSX.Element {
                       inputRef={searchInputRef}
                       onFocus={() => { scrollToShell(); setHeroMode(true); }}
                       onChange={handleSearchChange}
-                      onSubmit={() => void runSearch(searchTerm)}
+                      onSubmit={() => aiMode ? void runAiSearch(searchTerm) : void runSearch(searchTerm)}
                       placeholder="look up the best Brazilian wingers..."
+                      showAiToggle={useLlm}
+                      aiMode={aiMode}
+                      onAiToggle={() => setAiMode(m => !m)}
                     />
                   </motion.div>
                 ) : (
@@ -394,6 +445,91 @@ function App(): JSX.Element {
                   </AnimatePresence>
 
                   <AnimatePresence>
+                    {aiAnswer && status === "populated" && (
+                      <motion.div
+                        className="ai-answer-card"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.26, ease: "easeOut" }}
+                      >
+                        <span className="ai-answer-icon">✦</span>
+                        <div className="ai-answer-body">
+                          <div className="ai-answer-text">
+                            <ReactMarkdown>{aiAnswer}</ReactMarkdown>
+                          </div>
+                          {aiMeta && (
+                            <div className="ai-answer-meta">
+                              {aiMeta.rewrittenQuery && (
+                                <div className="ai-meta-block">
+                                  <span className="ai-meta-title">IR query</span>
+                                  <span className="ai-meta-line">{aiMeta.rewrittenQuery}</span>
+                                </div>
+                              )}
+                              {aiMeta.retrievalConfidence != null && (
+                                <div className="ai-meta-block">
+                                  <span className="ai-meta-title">Retrieval confidence</span>
+                                  <span className="ai-meta-line">{aiMeta.retrievalConfidence.toFixed(3)}</span>
+                                </div>
+                              )}
+                              {(aiMeta.results?.length ?? 0) > 0 && (
+                                <div className="ai-meta-block">
+                                  <span className="ai-meta-title">Top results</span>
+                                  <ul className="ai-meta-list">
+                                    {aiMeta.results?.slice(0, 3).map((r, i) => (
+                                      <li key={`${r.player_name ?? "r"}-${i}`}>
+                                        {[r.player_name, r.team].filter(Boolean).join(" · ") || "Unnamed player"}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {(aiMeta.evidence?.length ?? 0) > 0 && (
+                                <div className="ai-meta-block">
+                                  <span className="ai-meta-title">Retrieved evidence</span>
+                                  <ul className="ai-meta-list">
+                                    {aiMeta.evidence?.slice(0, 3).map((item, i) => {
+                                      const details = [
+                                        item.player_name,
+                                        item.team,
+                                        item.season_label,
+                                        typeof item.retrieval_score === "number"
+                                          ? `score ${item.retrieval_score.toFixed(3)}`
+                                          : null,
+                                      ].filter(Boolean).join(" · ");
+                                      const stats = item.key_stats
+                                        ? Object.entries(item.key_stats)
+                                            .filter(([, v]) => v != null)
+                                            .slice(0, 3)
+                                            .map(([k, v]) => `${k.replace(/_/g, " ")}: ${String(v)}`)
+                                            .join(" | ")
+                                        : null;
+                                      return (
+                                        <li key={`${item.player_name ?? "e"}-${i}`}>
+                                          <div>{details}</div>
+                                          {stats && <div className="ai-meta-stats">{stats}</div>}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              )}
+                              {(aiMeta.warnings?.length ?? 0) > 0 && (
+                                <div className="ai-meta-block">
+                                  <span className="ai-meta-title">Warnings</span>
+                                  <ul className="ai-meta-list">
+                                    {aiMeta.warnings?.map((w, i) => <li key={i}>{w}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence>
                     {searchMode?.toLowerCase().includes("svd") && status === "populated" && (
                       <motion.div
                         className="svd-badge"
@@ -445,9 +581,12 @@ function App(): JSX.Element {
                     onChange={handleSearchChange}
                     onSubmit={() => {
                       setHeroMode(false);
-                      void runSearch(searchTerm);
+                      aiMode ? void runAiSearch(searchTerm) : void runSearch(searchTerm);
                     }}
                     placeholder="look up the best Brazilian wingers..."
+                    showAiToggle={useLlm}
+                    aiMode={aiMode}
+                    onAiToggle={() => setAiMode(m => !m)}
                   />
                 </motion.div>
 
@@ -467,8 +606,6 @@ function App(): JSX.Element {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {useLlm && <Chat onSearchTerm={handleChatSearch} />}
 
         <PlayerProfile player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
       </div>
