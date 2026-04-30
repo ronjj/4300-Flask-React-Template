@@ -14,6 +14,7 @@
     "template"
   ],
   "dependencies": {
-    "framer-motion": "^12.38.0"
+    "framer-motion": "^12.38.0",
+    "react-markdown": "^10.1.0"
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, LayoutGroup, motion, useScroll, useTransform } from "framer-motion";
+import { AnimatePresence, motion, useScroll, useTransform } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 import Logo from "./components/Logo";
@@ -356,7 +356,7 @@ function App(): JSX.Element {
   };
 
   return (
-    <LayoutGroup>
+    <>
       <div className={`full-body-container ${useLlm ? "llm-mode" : ""}`}>
         <motion.main
           className="welcome"
@@ -659,7 +659,7 @@ function App(): JSX.Element {
 
         <PlayerProfile player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
       </div>
-    </LayoutGroup>
+    </>
   );
 }
 
