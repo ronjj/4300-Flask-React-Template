@@ -69,6 +69,44 @@ def get_player_index(name: str, player_index: list[str]) -> int:
     if normalized_name in index_map:
         return index_map[normalized_name]
 
+    # If the query is a single token (often a last name like "buffon"), prefer matching
+    # against candidates whose last token equals the query. This improves recall for
+    # embedding indices that include abbreviated first names (e.g. "g. buffon").
+    tokens = normalized_name.split()
+    if len(tokens) == 1:
+        last = tokens[0]
+        constrained = [p for p in player_index if p.split() and p.split()[-1] == last]
+        if constrained:
+            fuzzy_last = process.extractOne(normalized_name, constrained, score_cutoff=70)
+            if fuzzy_last is not None:
+                return index_map[fuzzy_last[0]]
+    elif len(tokens) >= 2:
+        # If we have at least first+last, prefer candidates with the same last name and
+        # a compatible first token (exact match, prefix match, or initial match).
+        first = tokens[0]
+        last = tokens[-1]
+        last_matched = [p for p in player_index if p.split() and p.split()[-1] == last]
+        if last_matched:
+            def first_token_ok(p: str) -> bool:
+                ptoks = p.split()
+                if not ptoks:
+                    return False
+                pf = ptoks[0]
+                if pf == first:
+                    return True
+                if len(first) >= 3 and pf.startswith(first[:3]):
+                    return True
+                # initial match (e.g. "g buffon" vs "g. buffon")
+                if pf and pf[0] == first[0]:
+                    return True
+                return False
+
+            constrained = [p for p in last_matched if first_token_ok(p)]
+            if constrained:
+                fuzzy_full = process.extractOne(normalized_name, constrained, score_cutoff=70)
+                if fuzzy_full is not None:
+                    return index_map[fuzzy_full[0]]
+
     fuzzy_match = process.extractOne(
         normalized_name,
         player_index,

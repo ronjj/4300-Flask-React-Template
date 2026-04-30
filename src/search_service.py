@@ -400,10 +400,21 @@ def search_players(query: str) -> Dict[str, Any]:
         # "Players like X" should default to same-position neighbors.
         # Do NOT rely on player_metadata for this (it can be dirty); derive position from
         # the one-hot pos_* columns that are part of the embedding feature set.
+        q_idx: int | None
         try:
             q_idx = get_player_index(semantic_target, embedding_bundle["player_index"])
         except ValueError:
-            q_idx = None
+            # Fallback: resolve via league index first (handles punctuation / special chars /
+            # abbreviations) then map that canonical name into embedding index.
+            resolved = find_player_by_name(semantic_target) or []
+            canonical = (resolved[0].get("name") if resolved else None) or None
+            if canonical:
+                try:
+                    q_idx = get_player_index(canonical, embedding_bundle["player_index"])
+                except ValueError:
+                    q_idx = None
+            else:
+                q_idx = None
         if q_idx is not None:
             matrix = embedding_bundle["matrix"]
             feature_names = _load_feature_names(int(matrix.shape[1]))

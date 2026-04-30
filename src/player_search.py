@@ -749,7 +749,11 @@ def parse_query(query: str) -> Dict[str, Any]:
     elif re.search(r"\bfast\b", text):
         filters["sort_by"] = "dribbles_completed"
     elif re.search(r"\b(best|top)\b", text):
-        filters["sort_by"] = "goals"
+        # When the user asks for "best goalkeepers", goals is meaningless.
+        if "positions" in filters and "Goalkeeper" in (filters.get("positions") or []):
+            filters["sort_by"] = "goalkeeper_score"
+        else:
+            filters["sort_by"] = "goals"
 
     max_age_under = query_max_age_under(query)
     if max_age_under is not None:
@@ -977,10 +981,19 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             shots_on_target = safe_sum("shots_on_target")
             dribbles_completed = safe_sum("dribbles_completed")
             shots = safe_sum("shots")
+            saves = safe_sum("saves")
+            clean_sheets = safe_sum("clean_sheets")
+            goals_against = safe_sum("goals_against")
 
             goals_per_game = rate_or_none(goals, appearances)
             assists_per_game = rate_or_none(assists, appearances)
             shot_on_target_ratio = rate_or_none(shots_on_target, shots)
+            save_percentage: Optional[float] = None
+            if saves is not None or goals_against is not None:
+                s = float(saves or 0)
+                g = float(goals_against or 0)
+                denom = s + g
+                save_percentage = (s / denom) * 100.0 if denom > 0 else None
 
             combined.append(
                 {
@@ -1000,6 +1013,10 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
                     "shots": shots,
                     "shots_on_target": shots_on_target,
                     "dribbles_completed": dribbles_completed,
+                    "saves": saves,
+                    "clean_sheets": clean_sheets,
+                    "goals_against": goals_against,
+                    "save_percentage": save_percentage,
                     "season_years": sorted({y for r in group for y in (r.get("season_years") or [])}),
                     "seasons": sorted({s for r in group for s in (r.get("seasons") or [])}),
                     "goals_per_game": goals_per_game,
@@ -1040,6 +1057,33 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
         # Strongly goal-first: other terms are light tie-breakers.
         return float(goals) * 100.0 + float(gpg_adj) * 20.0 + float(g90) * 2.0 + float(sot) * 0.02
 
+    def goalkeeper_score(player: Dict[str, Any]) -> Optional[float]:
+        """
+        Goalkeeper ranking signal.
+
+        Uses save percentage, clean sheets and shot-stopping volume, while penalizing
+        goals conceded. Scaled to behave sensibly on aggregated cross-league totals.
+        """
+        saves = safe_int(player.get("saves"))
+        ga = safe_int(player.get("goals_against"))
+        cs = safe_int(player.get("clean_sheets"))
+        minutes = safe_int(player.get("minutes"))
+        # Must have at least one keeper signal.
+        if saves is None and cs is None and ga is None:
+            return None
+        mins = float(minutes or 0)
+        saves_f = float(saves or 0)
+        ga_f = float(ga or 0)
+        cs_f = float(cs or 0)
+        denom = saves_f + ga_f
+        save_pct = (saves_f / denom) * 100.0 if denom > 0 else 0.0
+        per90 = (90.0 / mins) if mins > 0 else 0.0
+        saves_per90 = saves_f * per90
+        ga_per90 = ga_f * per90
+        cs_per90 = cs_f * per90
+        # Goal-first equivalent: higher is better.
+        return save_pct * 2.0 + saves_per90 * 3.0 + cs_per90 * 55.0 - ga_per90 * 6.0
+
     def freekick_score(player: Dict[str, Any]) -> Optional[float]:
         """
         Best-effort free-kick ranking signal across heterogeneous leagues.
@@ -1078,6 +1122,8 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             return tekky_score(player)
         if sort_by == "scorer_score":
             return scorer_score(player)
+        if sort_by == "goalkeeper_score":
+            return goalkeeper_score(player)
         return player.get(sort_by)
 
     sorted_results = sorted(
