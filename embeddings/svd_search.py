@@ -112,14 +112,18 @@ def _dimension_human_label(
         ranked = [b for b, s in ranked if s > 0]
         return ranked[:k]
 
-    pos_top = top_buckets(pos_scores, k=2)
-    neg_top = top_buckets(neg_scores, k=2)
-
-    # Prefer a single strong bucket; otherwise combine the top two.
-    label_bits = pos_top[:]
-    if not label_bits:
-        label_bits = ["Latent factor"]
-    label = " + ".join(label_bits[:2])
+    # Pick exactly ONE descriptor for the dimension.
+    #
+    # Strategy: choose the single strongest bucket across the top positive and
+    # negative loadings (by total absolute loading weight in that bucket).
+    # This avoids confusing labels like "Defending + Finishing".
+    combined_scores: dict[str, float] = {k: 0.0 for k in _FEATURE_BUCKETS}
+    for bucket in combined_scores:
+        combined_scores[bucket] = float(pos_scores.get(bucket, 0.0)) + float(
+            neg_scores.get(bucket, 0.0)
+        )
+    ranked = sorted(combined_scores.items(), key=lambda kv: kv[1], reverse=True)
+    label = ranked[0][0] if ranked and ranked[0][1] > 0 else "Latent factor"
 
     pos_detail = ", ".join(pos_feats[:3])
     neg_detail = ", ".join(neg_feats[:3])

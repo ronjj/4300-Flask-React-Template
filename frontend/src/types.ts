@@ -28,6 +28,7 @@ export interface SvdActivationEntry {
   label?: string
   label_detail?: string
   activation: number
+  source_dims?: number[]
 }
 
 export interface SvdAlignmentEntry {
@@ -37,6 +38,7 @@ export interface SvdAlignmentEntry {
   query_activation: number
   player_activation: number
   contribution: number
+  source_dims?: number[]
 }
 
 export interface SvdVectors {
