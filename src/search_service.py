@@ -21,6 +21,8 @@ from embeddings.svd_search import (
     load_svd_bundle,
     rank_raw_vs_svd,
     svd_dimension_legend,
+    top_latent_activations,
+    top_latent_alignment,
 )
 
 try:
@@ -344,7 +346,8 @@ def _dual_semantic_search(
             "mode": mode,
             "results": results,
             "results_svd": None,
-            "results_without_svd": None,
+            # Always provide a "standard" list for UI consistency.
+            "results_without_svd": results,
             "svd_available": False,
             "svd_latent_dimensions": [],
         }
@@ -356,6 +359,10 @@ def _dual_semantic_search(
     proto_lat = svd_model.transform(prototype.reshape(1, -1))[0]
     cand_lat = svd_model.transform(cand_mat)
 
+    query_svd = {
+        "top_activations": top_latent_activations(proto_lat, svd_bundle, top_k=8),
+    }
+
     raw_results: List[Dict[str, Any]] = []
     for loc in raw_order[:top_k]:
         loc = int(loc)
@@ -364,6 +371,11 @@ def _dual_semantic_search(
         )
         if hit is None:
             continue
+        # Attach query + player activations so the UI can justify matches even in raw ranking.
+        hit["svd_vectors"] = {
+            "query_top_activations": query_svd["top_activations"],
+            "top_alignment": top_latent_alignment(proto_lat, cand_lat[loc], svd_bundle, top_k=8),
+        }
         raw_results.append(hit)
 
     svd_results: List[Dict[str, Any]] = []
@@ -379,6 +391,10 @@ def _dual_semantic_search(
         )
         if hit is None:
             continue
+        hit["svd_vectors"] = {
+            "query_top_activations": query_svd["top_activations"],
+            "top_alignment": top_latent_alignment(proto_lat, cand_lat[loc], svd_bundle, top_k=8),
+        }
         svd_results.append(hit)
 
     return {
@@ -388,6 +404,7 @@ def _dual_semantic_search(
         "results_without_svd": raw_results,
         "svd_available": True,
         "svd_latent_dimensions": svd_dimension_legend(svd_bundle),
+        "query_svd": query_svd,
     }
 
 
@@ -706,6 +723,8 @@ def search_players(query: str) -> Dict[str, Any]:
             # For boolean queries, user expectation is deterministic column sorting (the
             # `boolean_search` output). Keep SVD rerank as an optional comparison only.
             response["results"] = boolean_results
+            # Use boolean ranking as the baseline (without SVD), but keep `results_svd`
+            # from `_dual_semantic_search` as the optional "why / alternative" view.
             response["results_without_svd"] = boolean_results
             if fk_mode:
                 ranked = sorted(
@@ -738,7 +757,7 @@ def search_players(query: str) -> Dict[str, Any]:
         "mode": "boolean",
         "results": boolean_results,
         "results_svd": None,
-        "results_without_svd": None,
+        "results_without_svd": boolean_results,
         "svd_available": False,
         "svd_latent_dimensions": [],
     }
