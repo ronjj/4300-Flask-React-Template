@@ -872,25 +872,53 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
 
         Sums counting stats and recomputes rate stats that we display (per-game / ratios).
         """
-        # Build a resolver for abbreviated names: (initial,last) -> unique full-name key.
+        # Build a resolver for abbreviated names: (initial,last) -> full-name key,
+        # but only when the match is unambiguous AND the eras are compatible.
         full_name_keys: dict[tuple[str, str], set[str]] = {}
+        full_name_eras: dict[str, float | None] = {}
+
+        def era_center(season_years: Any) -> float | None:
+            years = [y for y in (season_years or []) if isinstance(y, int)]
+            if not years:
+                return None
+            return float(sum(years) / len(years))
+
         for row in rows:
             tokens = _name_tokens(row)
             first, initial, last = _name_signature(tokens)
             if not last or not initial:
                 continue
             if len(tokens) >= 2 and len(first) > 1:
-                full_name_keys.setdefault((initial, last), set()).add(f"{first}_{last}")
+                key = f"{first}_{last}"
+                full_name_keys.setdefault((initial, last), set()).add(key)
+                full_name_eras.setdefault(key, era_center(row.get("season_years")))
 
         resolver: dict[tuple[str, str], str] = {}
         for sig, keys in full_name_keys.items():
-            # Only resolve when there is exactly one plausible full-name target.
+            # If there is only one full-name key, we *still* require era compatibility
+            # when mapping an abbreviated row into it (handled below).
             if len(keys) == 1:
                 resolver[sig] = next(iter(keys))
 
         buckets: Dict[str, List[Dict[str, Any]]] = {}
         for row in rows:
             key = person_key(row, resolver=resolver)
+            # Prevent over-merging abbreviated names into a famous full-name match when
+            # the seasons are clearly from different eras (e.g. "T. Henry" 2023 vs Thierry 1999).
+            tokens = _name_tokens(row)
+            first, initial, last = _name_signature(tokens)
+            if len(tokens) >= 2 and len(first) == 1 and initial and last:
+                resolved = resolver.get((initial, last))
+                if resolved:
+                    row_era = era_center(row.get("season_years"))
+                    target_era = full_name_eras.get(resolved)
+                    # If the resolved full-name has no era signal but the abbreviated row does,
+                    # do not merge (too risky; avoids Thomas Henry -> Thierry Henry).
+                    if row_era is not None and target_era is None:
+                        key = f"{initial}._{last}"
+                    elif row_era is not None and target_era is not None:
+                        if abs(row_era - target_era) > 8:
+                            key = f"{initial}._{last}"
             if not key:
                 continue
             buckets.setdefault(key, []).append(row)

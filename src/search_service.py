@@ -397,45 +397,68 @@ def search_players(query: str) -> Dict[str, Any]:
     embedding_bundle = _load_embeddings_bundle()
 
     if semantic_target and embedding_bundle is not None:
-        if load_svd_bundle() is not None:
-            try:
-                q_idx = get_player_index(
-                    semantic_target, embedding_bundle["player_index"]
-                )
-            except ValueError:
-                pass
-            else:
-                matrix = embedding_bundle["matrix"]
-                prototype = matrix[q_idx]
-                candidate_indices = [
-                    i for i in range(len(embedding_bundle["player_index"])) if i != q_idx
-                ]
-                candidate_indices = [
-                    i
-                    for i in candidate_indices
-                    if not _is_invalid_name(embedding_bundle["player_index"][i])
-                ]
-                return _dual_semantic_search(
-                    prototype,
-                    candidate_indices,
-                    embedding_bundle,
-                    "embedding_similarity",
-                    top_k=10,
-                )
-        semantic_results = find_similar_players(
-            semantic_target,
-            embedding_bundle["matrix"],
-            embedding_bundle["player_index"],
-            top_k=10,
-        )
-        return {
-            "mode": "embedding_similarity",
-            "results": [_aggregate_embedding_result(r) for r in semantic_results],
-            "results_svd": None,
-            "results_without_svd": None,
-            "svd_available": False,
-            "svd_latent_dimensions": [],
-        }
+        # "Players like X" should default to same-position neighbors.
+        # Do NOT rely on player_metadata for this (it can be dirty); derive position from
+        # the one-hot pos_* columns that are part of the embedding feature set.
+        try:
+            q_idx = get_player_index(semantic_target, embedding_bundle["player_index"])
+        except ValueError:
+            q_idx = None
+        if q_idx is not None:
+            matrix = embedding_bundle["matrix"]
+            feature_names = _load_feature_names(int(matrix.shape[1]))
+            pos_cols = ("pos_Forward", "pos_Midfielder", "pos_Defender", "pos_Goalkeeper")
+            pos_indices = {c: feature_names.index(c) for c in pos_cols if c in feature_names}
+            pos_label_map = {
+                "pos_Forward": "Forward",
+                "pos_Midfielder": "Midfielder",
+                "pos_Defender": "Defender",
+                "pos_Goalkeeper": "Goalkeeper",
+            }
+
+            def position_for_row(idx: int) -> str | None:
+                # Prefer metadata when it's non-placeholder, else use pos_* one-hot.
+                key = embedding_bundle["player_index"][idx]
+                meta_pos = (embedding_bundle["player_metadata"].get(key, {}) or {}).get("primary_position")
+                if meta_pos and not _is_invalid_name(meta_pos):
+                    return str(meta_pos)
+                if not pos_indices:
+                    return None
+                row = matrix[idx]
+                best_col = None
+                best_val = None
+                for col, j in pos_indices.items():
+                    try:
+                        v = float(row[j])
+                    except Exception:
+                        continue
+                    if best_val is None or v > best_val:
+                        best_val = v
+                        best_col = col
+                return pos_label_map.get(best_col) if best_col else None
+
+            target_position = position_for_row(int(q_idx))
+            prototype = matrix[int(q_idx)]
+            candidate_indices = [
+                i for i in range(len(embedding_bundle["player_index"])) if i != int(q_idx)
+            ]
+            candidate_indices = [
+                i
+                for i in candidate_indices
+                if not _is_invalid_name(embedding_bundle["player_index"][i])
+            ]
+            if target_position:
+                filtered = [i for i in candidate_indices if position_for_row(int(i)) == target_position]
+                # Only fall back if filtering would empty the pool.
+                if filtered:
+                    candidate_indices = filtered
+            return _dual_semantic_search(
+                prototype,
+                candidate_indices,
+                embedding_bundle,
+                "embedding_similarity",
+                top_k=10,
+            )
 
     if _is_description_similarity_query(query) and embedding_bundle is not None:
         if load_svd_bundle() is not None:
