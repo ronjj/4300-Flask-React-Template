@@ -323,6 +323,21 @@ def preprocess_player_stats(csv_paths: list[str] | None = None) -> tuple[pd.Data
         lambda row: _select_first_present(row, PLAYER_NAME_COLUMNS) or "Unknown Player",
         axis=1,
     )
+    # Some source rows contain placeholder strings equal to column names (e.g. "display_name")
+    # or stringified NaNs ("nan"). Treat these as missing and fall back to other fields.
+    invalid_names = {normalize_text(x) for x in ("display_name", "player_name", "short_name", "known_name", "nan")}
+    display_name = display_name.map(lambda v: None if normalize_text(str(v)) in invalid_names else v)
+    # Final fallback: compose first/last when present.
+    fallback_first = raw_df.get("first_name")
+    fallback_last = raw_df.get("last_name")
+    if fallback_first is not None and fallback_last is not None:
+        composed = (
+            fallback_first.astype(str).fillna("").str.strip()
+            + " "
+            + fallback_last.astype(str).fillna("").str.strip()
+        ).str.strip()
+        display_name = display_name.fillna(composed)
+    display_name = display_name.fillna("Unknown Player")
     raw_df = pd.concat(
         [
             raw_df,
@@ -346,6 +361,9 @@ def preprocess_player_stats(csv_paths: list[str] | None = None) -> tuple[pd.Data
             first_non_empty(row.get("country"), row.get("nationality"))
         ),
         axis=1,
+    )
+    raw_df["nationality_canonical"] = raw_df["nationality_canonical"].map(
+        lambda v: None if normalize_text(str(v)) == "nan" else v
     )
     raw_df["season_years"] = raw_df.apply(extract_season_years_for_row, axis=1)
 

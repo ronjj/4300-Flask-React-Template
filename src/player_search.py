@@ -149,7 +149,12 @@ def normalize_text(value: Optional[str]) -> str:
         return ""
     normalized = unicodedata.normalize("NFKD", value)
     without_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    return " ".join(without_marks.casefold().split())
+    # Normalize punctuation so names match across sources:
+    # - "m. salah" -> "m salah"
+    # - "son heung-min" -> "son heung min"
+    # - "Olivier, Giroud" -> "olivier giroud"
+    cleaned = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in without_marks)
+    return " ".join(cleaned.casefold().split())
 
 
 AFRICA_NATIONALITY_NORMALIZED = frozenset(
@@ -814,6 +819,176 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             return float("inf")
         return -float(value)
 
+    def _name_tokens(player: Dict[str, Any]) -> list[str]:
+        normalized = normalize_text(str(player.get("normalized_name") or player.get("name") or ""))
+        return normalized.split()
+
+    def _name_signature(tokens: list[str]) -> tuple[str, str, str]:
+        """
+        Return (first, initial, last) from normalized tokens.
+
+        If missing, returns empty strings.
+        """
+        if not tokens:
+            return "", "", ""
+        if len(tokens) == 1:
+            first = tokens[0]
+            return first, first[:1], tokens[0]
+        first = tokens[0]
+        last = tokens[-1]
+        return first, first[:1], last
+
+    def person_key(player: Dict[str, Any], *, resolver: dict[tuple[str, str], str] | None = None) -> str:
+        """
+        Cross-league aggregation key.
+
+        Default behavior:
+        - Full first name: key is "first_last" (e.g. "olivier_giroud")
+        - Abbreviated first name (single letter): key is "t._henry" style bucket, but it
+          can be resolved to a unique full-name key when unambiguous.
+
+        This prevents over-merging cases like "T. Henry" (Thomas Henry) with
+        "Thierry Henry" when both could share the same initial+last name.
+        """
+        tokens = _name_tokens(player)
+        first, initial, last = _name_signature(tokens)
+        if not last:
+            return ""
+        # Treat single-token names as-is (rare in this dataset).
+        if len(tokens) == 1:
+            return tokens[0]
+        # Abbreviated first name like "t henry".
+        if len(first) == 1 and initial and last:
+            if resolver is not None:
+                resolved = resolver.get((initial, last))
+                if resolved:
+                    return resolved
+            return f"{initial}._{last}"
+        return f"{first}_{last}"
+
+    def combine_players(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Combine multiple league rows for the same player into one aggregated record.
+
+        Sums counting stats and recomputes rate stats that we display (per-game / ratios).
+        """
+        # Build a resolver for abbreviated names: (initial,last) -> unique full-name key.
+        full_name_keys: dict[tuple[str, str], set[str]] = {}
+        for row in rows:
+            tokens = _name_tokens(row)
+            first, initial, last = _name_signature(tokens)
+            if not last or not initial:
+                continue
+            if len(tokens) >= 2 and len(first) > 1:
+                full_name_keys.setdefault((initial, last), set()).add(f"{first}_{last}")
+
+        resolver: dict[tuple[str, str], str] = {}
+        for sig, keys in full_name_keys.items():
+            # Only resolve when there is exactly one plausible full-name target.
+            if len(keys) == 1:
+                resolver[sig] = next(iter(keys))
+
+        buckets: Dict[str, List[Dict[str, Any]]] = {}
+        for row in rows:
+            key = person_key(row, resolver=resolver)
+            if not key:
+                continue
+            buckets.setdefault(key, []).append(row)
+
+        combined: List[Dict[str, Any]] = []
+
+        def safe_sum(field: str) -> Optional[int]:
+            vals: List[int] = []
+            for r in group:
+                v = r.get(field)
+                try:
+                    if v is None or v == "":
+                        continue
+                    vals.append(int(float(v)))
+                except (TypeError, ValueError):
+                    continue
+            return sum(vals) if vals else None
+
+        def first_non_empty_field(field: str) -> Optional[str]:
+            for r in group:
+                v = r.get(field)
+                if v is None:
+                    continue
+                s = str(v).strip()
+                if s:
+                    return s
+            return None
+
+        for _, group in buckets.items():
+            # Pick the "best" display name: prefer multi-token full names.
+            name_candidates = [str(r.get("name") or "").strip() for r in group if str(r.get("name") or "").strip()]
+            name_candidates.sort(key=lambda s: (len(s.split()) < 2, -len(s)))  # full name first, then longest
+            name = name_candidates[0] if name_candidates else (group[0].get("name") or "Unknown Player")
+
+            normalized_name = normalize_text(name)
+            leagues = sorted({str(r.get("league") or "").strip() for r in group if str(r.get("league") or "").strip()})
+            # Keep a representative position.
+            position = first_non_empty_field("position")
+            # Pick a representative team: the one with the most appearances across rows.
+            team_games: Dict[str, int] = {}
+            for r in group:
+                team = str(r.get("team") or "").strip()
+                if not team:
+                    continue
+                try:
+                    apps = int(float(r.get("appearances") or 0))
+                except (TypeError, ValueError):
+                    apps = 0
+                team_games[team] = team_games.get(team, 0) + max(0, apps)
+            team = max(team_games.items(), key=lambda kv: kv[1])[0] if team_games else None
+
+            goals = safe_sum("goals")
+            assists = safe_sum("assists")
+            appearances = safe_sum("appearances")
+            minutes = safe_sum("minutes")
+            shots_on_target = safe_sum("shots_on_target")
+            dribbles_completed = safe_sum("dribbles_completed")
+            shots = safe_sum("shots")
+
+            goals_per_game = rate_or_none(goals, appearances)
+            assists_per_game = rate_or_none(assists, appearances)
+            shot_on_target_ratio = rate_or_none(shots_on_target, shots)
+
+            combined.append(
+                {
+                    "player_id": None,  # provider-specific; not stable across leagues
+                    "name": name,
+                    "normalized_name": normalized_name,
+                    "nationality": first_non_empty_field("nationality"),
+                    "nationality_normalized": normalize_text(first_non_empty_field("nationality") or ""),
+                    "position": position,
+                    "league": ", ".join(leagues) if leagues else None,
+                    "team": team,
+                    "image": choose_image(first_non_empty_field("image")),
+                    "goals": goals,
+                    "assists": assists,
+                    "appearances": appearances,
+                    "minutes": minutes,
+                    "shots": shots,
+                    "shots_on_target": shots_on_target,
+                    "dribbles_completed": dribbles_completed,
+                    "season_years": sorted({y for r in group for y in (r.get("season_years") or [])}),
+                    "seasons": sorted({s for r in group for s in (r.get("seasons") or [])}),
+                    "goals_per_game": goals_per_game,
+                    "assists_per_game": assists_per_game,
+                    "shot_on_target_ratio": shot_on_target_ratio,
+                    "set_piece_goals": safe_sum("set_piece_goals"),
+                    "freekick_shots": safe_sum("freekick_shots"),
+                    "expected_goals_freekick": None,
+                }
+            )
+
+        return combined
+
+    # Combine the same player across leagues before ranking to avoid duplicates like
+    # "O. Giroud" vs "Olivier Giroud", and to sum totals across leagues.
+    results = combine_players(results)
+
     def scorer_score(player: Dict[str, Any]) -> Optional[float]:
         """
         Goal-scoring rank signal.
@@ -885,19 +1060,8 @@ def boolean_search(filters: Dict[str, Any], players: List[Dict[str, Any]]) -> Li
             player.get("name", "").casefold(),
         ),
     )
-    deduped: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for player in sorted_results:
-        pid = str(player.get("player_id") or "")
-        key_name = str(player.get("normalized_name") or player.get("name") or "").casefold()
-        key = (pid or key_name, str(player.get("league") or ""))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(player)
-        if len(deduped) >= 20:
-            break
-    return [serialize_player(player) for player in deduped]
+    top = sorted_results[:20]
+    return [serialize_player(player) for player in top]
 
 
 def load_player_index() -> Dict[str, Any]:
@@ -998,13 +1162,47 @@ def find_player_by_name(name: str) -> Optional[List[Dict[str, Any]]]:
     if exact_matches is not None:
         return [serialize_player(player) for player in exact_matches]
 
+    # Handle abbreviated first names like "m salah" / "o giroud" by constraining
+    # candidates to the same last name + first initial. This avoids poor difflib
+    # matches and helps embedding keys like "m. salah" resolve to "mohamed salah".
+    tokens = normalized_name.split()
+    if len(tokens) >= 2:
+        # Accept "m" or "m." as an initial token.
+        initial_token = re.sub(r"[^a-z]", "", tokens[0])
+        initial = initial_token[:1] if initial_token else ""
+        last = tokens[-1]
+        if initial and last:
+            constrained = [
+                candidate
+                for candidate in PLAYER_INDEX["candidate_names"]
+                if candidate.split()
+                and candidate.split()[-1] == last
+                and candidate[0] == initial
+            ]
+            if constrained:
+                match = process.extractOne(normalized_name, constrained, score_cutoff=80)
+                if match is not None:
+                    return [
+                        serialize_player(player)
+                        for player in PLAYER_INDEX["players_by_name"][match[0]]
+                    ]
+
     fuzzy_matches = difflib.get_close_matches(
         normalized_name,
         PLAYER_INDEX["candidate_names"],
         n=1,
         cutoff=0.8,
     )
-    if not fuzzy_matches:
-        return None
+    if fuzzy_matches:
+        return [serialize_player(player) for player in PLAYER_INDEX["players_by_name"][fuzzy_matches[0]]]
 
-    return [serialize_player(player) for player in PLAYER_INDEX["players_by_name"][fuzzy_matches[0]]]
+    # Final fallback: rapidfuzz on full candidate list (handles punctuation deltas like
+    # "son heung min" vs "son heung-min" when normalization schemes differ).
+    match = process.extractOne(
+        normalized_name,
+        PLAYER_INDEX["candidate_names"],
+        score_cutoff=75,
+    )
+    if match is None:
+        return None
+    return [serialize_player(player) for player in PLAYER_INDEX["players_by_name"][match[0]]]

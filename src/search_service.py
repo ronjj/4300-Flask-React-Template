@@ -58,6 +58,32 @@ LOGGER = logging.getLogger(__name__)
 _FEATURE_NAME_CACHE: list[str] | None = None
 
 
+_INVALID_DISPLAY_NAMES = frozenset(
+    {
+        # Note: normalize_text() strips punctuation (e.g. "display_name" -> "display name").
+        "display name",
+        "display_name",
+        "nan",
+        "unknown player",
+        "",
+    }
+)
+
+
+def _is_invalid_name(text: Any) -> bool:
+    return normalize_text(str(text or "")) in _INVALID_DISPLAY_NAMES
+
+
+def _safe_display_name(display: Any, fallback: str) -> str:
+    """Return a user-facing name, avoiding placeholder/NaN values from metadata."""
+    text = str(display or "").strip()
+    if not text:
+        return fallback
+    if _is_invalid_name(text):
+        return fallback
+    return text
+
+
 def _load_feature_names(expected_dim: int) -> list[str]:
     global _FEATURE_NAME_CACHE
     if _FEATURE_NAME_CACHE is not None and len(_FEATURE_NAME_CACHE) == expected_dim:
@@ -255,8 +281,11 @@ def _pack_semantic_hit(
     player_index = embedding_bundle["player_index"]
     player_metadata = embedding_bundle["player_metadata"]
     norm_name = player_index[row_index]
+    if _is_invalid_name(norm_name):
+        # Drop poisoned embedding index entries (e.g. "display_name").
+        return None
     meta = player_metadata.get(norm_name, {})
-    display = meta.get("display_name", norm_name)
+    display = _safe_display_name(meta.get("display_name"), norm_name)
     inner = {
         "player": display,
         "lookup_key": norm_name,
@@ -264,6 +293,10 @@ def _pack_semantic_hit(
         "position": meta.get("primary_position", "Unknown"),
     }
     agg = _aggregate_embedding_result(inner)
+    # Extra guard: never return placeholder names even if downstream aggregation changes.
+    agg["name"] = _safe_display_name(agg.get("name"), norm_name)
+    if _is_invalid_name(agg.get("name")):
+        return None
     agg["search_mode"] = mode
     if svd_explain is not None:
         agg["svd_explain"] = svd_explain
@@ -299,10 +332,14 @@ def _dual_semantic_search(
         proto = prototype.astype(float).reshape(1, -1)
         sims = cosine_similarity(_normalize_rows(proto), _normalize_rows(cand_mat.astype(float)))[0]
         order = np.argsort(sims)[::-1][:top_k]
-        results = [
-            _pack_semantic_hit(embedding_bundle, candidate_indices[int(i)], sims[i], mode)
-            for i in order
-        ]
+        results = []
+        for i in order:
+            hit = _pack_semantic_hit(
+                embedding_bundle, candidate_indices[int(i)], sims[i], mode
+            )
+            if hit is None:
+                continue
+            results.append(hit)
         return {
             "mode": mode,
             "results": results,
@@ -322,25 +359,27 @@ def _dual_semantic_search(
     raw_results: List[Dict[str, Any]] = []
     for loc in raw_order[:top_k]:
         loc = int(loc)
-        raw_results.append(
-            _pack_semantic_hit(
-                embedding_bundle, candidate_indices[loc], raw_scores[loc], mode
-            )
+        hit = _pack_semantic_hit(
+            embedding_bundle, candidate_indices[loc], raw_scores[loc], mode
         )
+        if hit is None:
+            continue
+        raw_results.append(hit)
 
     svd_results: List[Dict[str, Any]] = []
     for loc in svd_order[:top_k]:
         loc = int(loc)
         explain = explain_latent_alignment(proto_lat, cand_lat[loc], svd_bundle)
-        svd_results.append(
-            _pack_semantic_hit(
-                embedding_bundle,
-                candidate_indices[loc],
-                svd_scores[loc],
-                mode,
-                svd_explain=explain,
-            )
+        hit = _pack_semantic_hit(
+            embedding_bundle,
+            candidate_indices[loc],
+            svd_scores[loc],
+            mode,
+            svd_explain=explain,
         )
+        if hit is None:
+            continue
+        svd_results.append(hit)
 
     return {
         "mode": mode,
@@ -370,6 +409,11 @@ def search_players(query: str) -> Dict[str, Any]:
                 prototype = matrix[q_idx]
                 candidate_indices = [
                     i for i in range(len(embedding_bundle["player_index"])) if i != q_idx
+                ]
+                candidate_indices = [
+                    i
+                    for i in candidate_indices
+                    if not _is_invalid_name(embedding_bundle["player_index"][i])
                 ]
                 return _dual_semantic_search(
                     prototype,
@@ -410,7 +454,9 @@ def search_players(query: str) -> Dict[str, Any]:
                     "svd_latent_dimensions": svd_dimension_legend(bundle) if bundle else [],
                 }
             index_lookup = {name: idx for idx, name in enumerate(pi)}
-            candidate_indices = [index_lookup[n] for n in filtered_names]
+            candidate_indices = [
+                index_lookup[n] for n in filtered_names if not _is_invalid_name(n)
+            ]
             filters = parse_similarity_query(query)
             prototype = build_description_prototype(
                 filtered_names, matrix, pi, pm, filters
