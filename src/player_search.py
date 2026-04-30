@@ -25,6 +25,8 @@ LEAGUE_SOURCES = (
         "league": "Serie A",
         "path": os.path.join(DATA_DIR, "seriea_all_players.csv"),
     },
+    # Optional: Ligue 1 data uses a different schema and is incorporated into embeddings
+    # via embeddings/preprocess.py; boolean search can be extended later if needed.
 )
 
 POSITION_GROUPS = {
@@ -41,6 +43,8 @@ LEAGUE_KEYWORDS: dict[str, str] = {
     "epl": "Premier League",
     "serie a": "Serie A",
     "seriea": "Serie A",
+    "ligue 1": "Ligue 1",
+    "ligue1": "Ligue 1",
 }
 
 NATIONALITY_KEYWORDS = {

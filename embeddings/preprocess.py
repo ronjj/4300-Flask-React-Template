@@ -26,6 +26,10 @@ STATS_CSV_PATHS = [
     os.path.join(DATA_DIR, "seriea_all_players.csv"),
 ]
 
+LIGUE1_DIR = os.path.join(DATA_DIR, "ligue1_data")
+LIGUE1_PROFILES_PATH = os.path.join(LIGUE1_DIR, "ligue1_profiles.csv")
+LIGUE1_SEASON_STATS_PATH = os.path.join(LIGUE1_DIR, "ligue1_season_stats.csv")
+
 POSITION_COLUMNS = ["position", "role_label", "role"]
 PLAYER_NAME_COLUMNS = ["player_name", "display_name", "short_name", "known_name"]
 SEASON_COLUMNS = ["season", "season_range", "seasons_played"]
@@ -132,6 +136,55 @@ def load_stats_csvs(csv_paths: list[str] | None = None) -> pd.DataFrame:
             meta["league"] = [infer_league_name(path)] * n
         frame = pd.concat([frame.reset_index(drop=True), pd.DataFrame(meta)], axis=1)
         frames.append(frame)
+
+    # Optional: Ligue 1 dataset lives as multiple CSVs under data/ligue1_data/.
+    # We merge profiles + season stats into a single row-level frame compatible with the rest
+    # of the preprocessing pipeline.
+    if os.path.exists(LIGUE1_PROFILES_PATH) and os.path.exists(LIGUE1_SEASON_STATS_PATH):
+        try:
+            profiles = pd.read_csv(LIGUE1_PROFILES_PATH, low_memory=False)
+            stats = pd.read_csv(LIGUE1_SEASON_STATS_PATH, low_memory=False)
+            merged = stats.merge(
+                profiles,
+                on=["player_id", "season"],
+                how="left",
+                suffixes=("", "_profile"),
+            )
+            merged["player_name"] = (
+                merged.get("first_name", "").astype(str).fillna("").str.strip()
+                + " "
+                + merged.get("last_name", "").astype(str).fillna("").str.strip()
+            ).str.strip()
+            merged["country"] = merged.get("country_name")
+            # Map Ligue 1 numeric positions to coarse labels.
+            # Observed: 1=goalkeeper; others map to outfield groups.
+            def _ligue1_position_label(value: Any) -> str:
+                try:
+                    n = int(float(value))
+                except Exception:
+                    return ""
+                if n == 1:
+                    return "Goalkeeper"
+                if n == 2:
+                    return "Defender"
+                if n == 3:
+                    return "Midfielder"
+                if n == 4:
+                    return "Forward"
+                return ""
+
+            merged["position"] = merged.get("position").map(_ligue1_position_label)
+            meta = {
+                "_source_path": [LIGUE1_SEASON_STATS_PATH] * len(merged),
+                "_source_file": [os.path.basename(LIGUE1_SEASON_STATS_PATH)] * len(merged),
+                "_row_number": list(range(1, len(merged) + 1)),
+                "league": ["Ligue 1"] * len(merged),
+            }
+            merged = pd.concat([merged.reset_index(drop=True), pd.DataFrame(meta)], axis=1)
+            frames.append(merged)
+            LOGGER.info("Loaded Ligue 1 dataset (%s rows)", len(merged))
+        except Exception as exc:
+            LOGGER.warning("Failed to load Ligue 1 dataset: %s", exc)
 
     if not frames:
         raise FileNotFoundError(f"No stats CSVs found from paths: {paths}")

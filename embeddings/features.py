@@ -114,8 +114,38 @@ RAW_TO_CANONICAL_FEATURES = {
     "save_percentage": ["totalSavePerc", "Save Percentage"],
     "yellow_cards": ["yellowCards", "total_yellow_card", "yellow-cards", "Ammonizioni"],
     "red_cards": ["totalRedCards", "total_red_card", "red-cards", "Espulsioni"],
-    "appearances": ["appearances", "gamesPlayed", "total_games", "games-played", "Games Played", "Presenze"],
-    "minutes_played": ["timePlayed", "total_mins_played", "minutes-played", "Time Played", "Minuti"],
+    # Include Ligue 1 dataset column names (total_matches_played / total_minutes_played).
+    "appearances": [
+        "appearances",
+        "gamesPlayed",
+        "total_games",
+        "games-played",
+        "Games Played",
+        "Presenze",
+        "total_matches_played",
+    ],
+    "minutes_played": [
+        "timePlayed",
+        "total_mins_played",
+        "minutes-played",
+        "Time Played",
+        "Minuti",
+        "total_minutes_played",
+    ],
+    # Ligue 1: map attempts/shots columns when present.
+    "shots": ["totalShots", "total_scoring_att", "total-scoring-attempts", "Total Shots", "Tiri", "total_attempts"],
+    "shots_on_target": [
+        "shotsOnTargetIncGoals",
+        "total_ontarget_attempt",
+        "on-target-scoring-attempts",
+        "Shots On Target ( inc goals )",
+        "TiriInPorta",
+        "total_shots_on_target",
+    ],
+    # Ligue 1: "balls played" is a decent proxy for total passes.
+    "passes": ["totalPasses", "total_pass", "Total Passes", "Passaggi", "total_balls_played"],
+    "interceptions": ["interceptions", "total_interception", "interception", "total_interceptions"],
+    "tackles": ["totalTackles", "total_tackle", "tackle", "Contrasti", "total_tackles_won"],
 }
 
 CANONICAL_FEATURE_COLUMNS = (
