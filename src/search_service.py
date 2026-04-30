@@ -21,6 +21,8 @@ from embeddings.svd_search import (
     load_svd_bundle,
     rank_raw_vs_svd,
     svd_dimension_legend,
+    top_latent_activations,
+    top_latent_alignment,
 )
 
 try:
@@ -56,6 +58,32 @@ except ImportError:  # pragma: no cover - package-style import fallback
 LOGGER = logging.getLogger(__name__)
 
 _FEATURE_NAME_CACHE: list[str] | None = None
+
+
+_INVALID_DISPLAY_NAMES = frozenset(
+    {
+        # Note: normalize_text() strips punctuation (e.g. "display_name" -> "display name").
+        "display name",
+        "display_name",
+        "nan",
+        "unknown player",
+        "",
+    }
+)
+
+
+def _is_invalid_name(text: Any) -> bool:
+    return normalize_text(str(text or "")) in _INVALID_DISPLAY_NAMES
+
+
+def _safe_display_name(display: Any, fallback: str) -> str:
+    """Return a user-facing name, avoiding placeholder/NaN values from metadata."""
+    text = str(display or "").strip()
+    if not text:
+        return fallback
+    if _is_invalid_name(text):
+        return fallback
+    return text
 
 
 def _load_feature_names(expected_dim: int) -> list[str]:
@@ -255,8 +283,11 @@ def _pack_semantic_hit(
     player_index = embedding_bundle["player_index"]
     player_metadata = embedding_bundle["player_metadata"]
     norm_name = player_index[row_index]
+    if _is_invalid_name(norm_name):
+        # Drop poisoned embedding index entries (e.g. "display_name").
+        return None
     meta = player_metadata.get(norm_name, {})
-    display = meta.get("display_name", norm_name)
+    display = _safe_display_name(meta.get("display_name"), norm_name)
     inner = {
         "player": display,
         "lookup_key": norm_name,
@@ -264,6 +295,10 @@ def _pack_semantic_hit(
         "position": meta.get("primary_position", "Unknown"),
     }
     agg = _aggregate_embedding_result(inner)
+    # Extra guard: never return placeholder names even if downstream aggregation changes.
+    agg["name"] = _safe_display_name(agg.get("name"), norm_name)
+    if _is_invalid_name(agg.get("name")):
+        return None
     agg["search_mode"] = mode
     if svd_explain is not None:
         agg["svd_explain"] = svd_explain
@@ -299,15 +334,20 @@ def _dual_semantic_search(
         proto = prototype.astype(float).reshape(1, -1)
         sims = cosine_similarity(_normalize_rows(proto), _normalize_rows(cand_mat.astype(float)))[0]
         order = np.argsort(sims)[::-1][:top_k]
-        results = [
-            _pack_semantic_hit(embedding_bundle, candidate_indices[int(i)], sims[i], mode)
-            for i in order
-        ]
+        results = []
+        for i in order:
+            hit = _pack_semantic_hit(
+                embedding_bundle, candidate_indices[int(i)], sims[i], mode
+            )
+            if hit is None:
+                continue
+            results.append(hit)
         return {
             "mode": mode,
             "results": results,
             "results_svd": None,
-            "results_without_svd": None,
+            # Always provide a "standard" list for UI consistency.
+            "results_without_svd": results,
             "svd_available": False,
             "svd_latent_dimensions": [],
         }
@@ -319,28 +359,43 @@ def _dual_semantic_search(
     proto_lat = svd_model.transform(prototype.reshape(1, -1))[0]
     cand_lat = svd_model.transform(cand_mat)
 
+    query_svd = {
+        "top_activations": top_latent_activations(proto_lat, svd_bundle, top_k=8),
+    }
+
     raw_results: List[Dict[str, Any]] = []
     for loc in raw_order[:top_k]:
         loc = int(loc)
-        raw_results.append(
-            _pack_semantic_hit(
-                embedding_bundle, candidate_indices[loc], raw_scores[loc], mode
-            )
+        hit = _pack_semantic_hit(
+            embedding_bundle, candidate_indices[loc], raw_scores[loc], mode
         )
+        if hit is None:
+            continue
+        # Attach query + player activations so the UI can justify matches even in raw ranking.
+        hit["svd_vectors"] = {
+            "query_top_activations": query_svd["top_activations"],
+            "top_alignment": top_latent_alignment(proto_lat, cand_lat[loc], svd_bundle, top_k=8),
+        }
+        raw_results.append(hit)
 
     svd_results: List[Dict[str, Any]] = []
     for loc in svd_order[:top_k]:
         loc = int(loc)
         explain = explain_latent_alignment(proto_lat, cand_lat[loc], svd_bundle)
-        svd_results.append(
-            _pack_semantic_hit(
-                embedding_bundle,
-                candidate_indices[loc],
-                svd_scores[loc],
-                mode,
-                svd_explain=explain,
-            )
+        hit = _pack_semantic_hit(
+            embedding_bundle,
+            candidate_indices[loc],
+            svd_scores[loc],
+            mode,
+            svd_explain=explain,
         )
+        if hit is None:
+            continue
+        hit["svd_vectors"] = {
+            "query_top_activations": query_svd["top_activations"],
+            "top_alignment": top_latent_alignment(proto_lat, cand_lat[loc], svd_bundle, top_k=8),
+        }
+        svd_results.append(hit)
 
     return {
         "mode": mode,
@@ -349,6 +404,7 @@ def _dual_semantic_search(
         "results_without_svd": raw_results,
         "svd_available": True,
         "svd_latent_dimensions": svd_dimension_legend(svd_bundle),
+        "query_svd": query_svd,
     }
 
 
@@ -358,40 +414,79 @@ def search_players(query: str) -> Dict[str, Any]:
     embedding_bundle = _load_embeddings_bundle()
 
     if semantic_target and embedding_bundle is not None:
-        if load_svd_bundle() is not None:
-            try:
-                q_idx = get_player_index(
-                    semantic_target, embedding_bundle["player_index"]
-                )
-            except ValueError:
-                pass
+        # "Players like X" should default to same-position neighbors.
+        # Do NOT rely on player_metadata for this (it can be dirty); derive position from
+        # the one-hot pos_* columns that are part of the embedding feature set.
+        q_idx: int | None
+        try:
+            q_idx = get_player_index(semantic_target, embedding_bundle["player_index"])
+        except ValueError:
+            # Fallback: resolve via league index first (handles punctuation / special chars /
+            # abbreviations) then map that canonical name into embedding index.
+            resolved = find_player_by_name(semantic_target) or []
+            canonical = (resolved[0].get("name") if resolved else None) or None
+            if canonical:
+                try:
+                    q_idx = get_player_index(canonical, embedding_bundle["player_index"])
+                except ValueError:
+                    q_idx = None
             else:
-                matrix = embedding_bundle["matrix"]
-                prototype = matrix[q_idx]
-                candidate_indices = [
-                    i for i in range(len(embedding_bundle["player_index"])) if i != q_idx
-                ]
-                return _dual_semantic_search(
-                    prototype,
-                    candidate_indices,
-                    embedding_bundle,
-                    "embedding_similarity",
-                    top_k=10,
-                )
-        semantic_results = find_similar_players(
-            semantic_target,
-            embedding_bundle["matrix"],
-            embedding_bundle["player_index"],
-            top_k=10,
-        )
-        return {
-            "mode": "embedding_similarity",
-            "results": [_aggregate_embedding_result(r) for r in semantic_results],
-            "results_svd": None,
-            "results_without_svd": None,
-            "svd_available": False,
-            "svd_latent_dimensions": [],
-        }
+                q_idx = None
+        if q_idx is not None:
+            matrix = embedding_bundle["matrix"]
+            feature_names = _load_feature_names(int(matrix.shape[1]))
+            pos_cols = ("pos_Forward", "pos_Midfielder", "pos_Defender", "pos_Goalkeeper")
+            pos_indices = {c: feature_names.index(c) for c in pos_cols if c in feature_names}
+            pos_label_map = {
+                "pos_Forward": "Forward",
+                "pos_Midfielder": "Midfielder",
+                "pos_Defender": "Defender",
+                "pos_Goalkeeper": "Goalkeeper",
+            }
+
+            def position_for_row(idx: int) -> str | None:
+                # Prefer metadata when it's non-placeholder, else use pos_* one-hot.
+                key = embedding_bundle["player_index"][idx]
+                meta_pos = (embedding_bundle["player_metadata"].get(key, {}) or {}).get("primary_position")
+                if meta_pos and not _is_invalid_name(meta_pos):
+                    return str(meta_pos)
+                if not pos_indices:
+                    return None
+                row = matrix[idx]
+                best_col = None
+                best_val = None
+                for col, j in pos_indices.items():
+                    try:
+                        v = float(row[j])
+                    except Exception:
+                        continue
+                    if best_val is None or v > best_val:
+                        best_val = v
+                        best_col = col
+                return pos_label_map.get(best_col) if best_col else None
+
+            target_position = position_for_row(int(q_idx))
+            prototype = matrix[int(q_idx)]
+            candidate_indices = [
+                i for i in range(len(embedding_bundle["player_index"])) if i != int(q_idx)
+            ]
+            candidate_indices = [
+                i
+                for i in candidate_indices
+                if not _is_invalid_name(embedding_bundle["player_index"][i])
+            ]
+            if target_position:
+                filtered = [i for i in candidate_indices if position_for_row(int(i)) == target_position]
+                # Only fall back if filtering would empty the pool.
+                if filtered:
+                    candidate_indices = filtered
+            return _dual_semantic_search(
+                prototype,
+                candidate_indices,
+                embedding_bundle,
+                "embedding_similarity",
+                top_k=10,
+            )
 
     if _is_description_similarity_query(query) and embedding_bundle is not None:
         if load_svd_bundle() is not None:
@@ -410,7 +505,9 @@ def search_players(query: str) -> Dict[str, Any]:
                     "svd_latent_dimensions": svd_dimension_legend(bundle) if bundle else [],
                 }
             index_lookup = {name: idx for idx, name in enumerate(pi)}
-            candidate_indices = [index_lookup[n] for n in filtered_names]
+            candidate_indices = [
+                index_lookup[n] for n in filtered_names if not _is_invalid_name(n)
+            ]
             filters = parse_similarity_query(query)
             prototype = build_description_prototype(
                 filtered_names, matrix, pi, pm, filters
@@ -626,6 +723,8 @@ def search_players(query: str) -> Dict[str, Any]:
             # For boolean queries, user expectation is deterministic column sorting (the
             # `boolean_search` output). Keep SVD rerank as an optional comparison only.
             response["results"] = boolean_results
+            # Use boolean ranking as the baseline (without SVD), but keep `results_svd`
+            # from `_dual_semantic_search` as the optional "why / alternative" view.
             response["results_without_svd"] = boolean_results
             if fk_mode:
                 ranked = sorted(
@@ -658,7 +757,7 @@ def search_players(query: str) -> Dict[str, Any]:
         "mode": "boolean",
         "results": boolean_results,
         "results_svd": None,
-        "results_without_svd": None,
+        "results_without_svd": boolean_results,
         "svd_available": False,
         "svd_latent_dimensions": [],
     }

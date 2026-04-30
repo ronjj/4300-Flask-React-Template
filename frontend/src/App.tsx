@@ -14,12 +14,10 @@ import compassSvg from "./assets/compass.svg";
 
 const EXAMPLE_QUERIES = [
   "best brazilian wingers",
-  "top scorers in La Liga",
+  "top forwards in La Liga",
   "fastest defenders in the Premier League",
   "creative midfielders from Argentina",
-  "best free kick takers",
   "most assists in Serie A",
-  "clinical finishers in Bundesliga",
   "box-to-box midfielders",
   "best Spanish goalkeepers",
   "prolific wingers from Africa",
@@ -113,6 +111,9 @@ function App(): JSX.Element {
   } | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
+  const [playersSvd, setPlayersSvd] = useState<PlayerCardData[]>([]);
+  const [svdAvailable, setSvdAvailable] = useState<boolean>(false);
+  const [showSvdRanking, setShowSvdRanking] = useState<boolean>(false);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
@@ -186,6 +187,9 @@ function App(): JSX.Element {
     const trimmed = term.trim();
     if (trimmed === "") {
       setPlayers([]);
+      setPlayersSvd([]);
+      setSvdAvailable(false);
+      setShowSvdRanking(false);
       setStatus("idle");
       return;
     }
@@ -194,24 +198,32 @@ function App(): JSX.Element {
     setSearchMode(null);
     setAiAnswer(null);
     setAiMeta(null);
+    setSvdAvailable(false);
+    setShowSvdRanking(false);
     try {
       const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
       if (!response.ok) {
         setPlayers([]);
+        setPlayersSvd([]);
+        setSvdAvailable(false);
+        setShowSvdRanking(false);
         setStatus("error");
         return;
       }
       const data: SearchResponse = await response.json();
-      const results = Array.isArray(data.results) ? data.results : [];
+      const standardResults = Array.isArray(data.results_without_svd)
+        ? (data.results_without_svd as PlayerStats[])
+        : (Array.isArray(data.results) ? data.results : []);
+      const svdResults = Array.isArray(data.results_svd) ? (data.results_svd as PlayerStats[]) : [];
 
       // Build rank-delta map: name → (rank_without_svd − rank_with_svd)
       // positive = SVD moved the player higher in the list
       const rankDeltaMap = new Map<string, number>();
-      if (data.svd_available && data.results_without_svd && data.results_svd) {
+      if (data.svd_available && standardResults.length > 0 && svdResults.length > 0) {
         const withoutRanks = new Map(
-          data.results_without_svd.map((p, i) => [p.name, i])
+          standardResults.map((p, i) => [p.name, i])
         );
-        data.results_svd.forEach((player, svdIdx) => {
+        svdResults.forEach((player, svdIdx) => {
           const withoutIdx = withoutRanks.get(player.name);
           if (withoutIdx !== undefined) {
             rankDeltaMap.set(player.name, withoutIdx - svdIdx);
@@ -219,16 +231,31 @@ function App(): JSX.Element {
         });
       }
 
-      const nextPlayers = toCardData(results).map((card) =>
+      const nextPlayers = toCardData(standardResults).map((card) =>
         rankDeltaMap.has(card.name)
           ? { ...card, svdRankDelta: rankDeltaMap.get(card.name)! }
           : card
       );
       setPlayers(nextPlayers);
+      const hasSvd = Boolean(data.svd_available && svdResults.length > 0);
+      setSvdAvailable(hasSvd);
+      if (hasSvd) {
+        const svdCards = toCardData(svdResults).map((card) =>
+          rankDeltaMap.has(card.name)
+            ? { ...card, svdRankDelta: rankDeltaMap.get(card.name)! }
+            : card
+        );
+        setPlayersSvd(svdCards);
+      } else {
+        setPlayersSvd([]);
+      }
       setStatus(nextPlayers.length > 0 ? "populated" : "empty");
       setSearchMode(data.results[0]?.search_mode ?? null);
     } catch {
       setPlayers([]);
+      setPlayersSvd([]);
+      setSvdAvailable(false);
+      setShowSvdRanking(false);
       setStatus("error");
     }
   };
@@ -546,7 +573,30 @@ function App(): JSX.Element {
                     )}
                   </AnimatePresence>
 
-                  <PlayerGrid players={players} onFullStatsClick={handleFullStatsClick} />
+                  {svdAvailable && status === "populated" && (
+                    <div className="svd-ranking-toggle">
+                      <span className="svd-ranking-label">Ranking</span>
+                      <button
+                        type="button"
+                        className={`svd-ranking-btn ${!showSvdRanking ? "active" : ""}`}
+                        onClick={() => setShowSvdRanking(false)}
+                      >
+                        Standard
+                      </button>
+                      <button
+                        type="button"
+                        className={`svd-ranking-btn ${showSvdRanking ? "active" : ""}`}
+                        onClick={() => setShowSvdRanking(true)}
+                      >
+                        SVD
+                      </button>
+                    </div>
+                  )}
+
+                  <PlayerGrid
+                    players={showSvdRanking && playersSvd.length > 0 ? playersSvd : players}
+                    onFullStatsClick={handleFullStatsClick}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>

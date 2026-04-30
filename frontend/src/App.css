@@ -528,6 +528,52 @@
   font-weight: 500;
 }
 
+.svd-ranking-toggle {
+  width: min(960px, 94vw);
+  margin: 10px auto 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.svd-ranking-label {
+  color: rgba(255, 255, 255, 0.72);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.svd-ranking-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, filter 0.18s ease;
+}
+
+.svd-ranking-btn:hover {
+  filter: brightness(0.95);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.svd-ranking-btn.active {
+  background: rgba(131, 193, 167, 0.16);
+  border-color: rgba(131, 193, 167, 0.42);
+  color: rgba(131, 193, 167, 0.98);
+}
+
 .player-grid {
   width: min(1000px, 96vw);
   margin: 18px auto 0;
@@ -669,6 +715,117 @@
 .full-stats-btn:hover {
   filter: brightness(0.9);
 }
+
+.show-svd-btn {
+  margin: 10px auto 0;
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 8px 22px;
+  font-size: 13px;
+  line-height: 1.1;
+  cursor: pointer;
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: filter 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.show-svd-btn:hover {
+  filter: brightness(0.95);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.svd-mini-panel {
+  margin-top: 10px;
+  padding: 10px 10px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(6px);
+}
+
+.svd-mini-section + .svd-mini-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.svd-mini-title {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.78);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.svd-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.svd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.svd-chip.pos {
+  border-color: rgba(131, 193, 167, 0.30);
+  background: rgba(131, 193, 167, 0.10);
+  color: rgba(131, 193, 167, 0.95);
+}
+
+.svd-chip.neg {
+  border-color: rgba(255, 160, 100, 0.26);
+  background: rgba(255, 160, 100, 0.08);
+  color: rgba(255, 160, 100, 0.92);
+}
+
+.svd-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.svd-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.svd-mini-label {
+  color: rgba(255, 255, 255, 0.82);
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.svd-mini-value {
+  font-family: "Google Sans", "Open Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.svd-mini-value.pos { color: #83C1A7; }
+.svd-mini-value.neg { color: rgba(255, 160, 100, 0.85); }
 
 .llm-mode .player-grid {
   margin-bottom: 8px;

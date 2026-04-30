@@ -23,6 +23,27 @@ export interface SvdLegendEntry {
   explained_variance_ratio?: number
 }
 
+export interface SvdActivationEntry {
+  dim: number
+  label?: string
+  label_detail?: string
+  activation: number
+}
+
+export interface SvdAlignmentEntry {
+  dim: number
+  label?: string
+  label_detail?: string
+  query_activation: number
+  player_activation: number
+  contribution: number
+}
+
+export interface SvdVectors {
+  query_top_activations?: SvdActivationEntry[]
+  top_alignment?: SvdAlignmentEntry[]
+}
+
 export interface PlayerStats {
   player_id?: string | null
   name: string
@@ -45,6 +66,7 @@ export interface PlayerStats {
   similarity_score?: number | null
   search_mode?: string | null
   svd_explain?: SvdExplain
+  svd_vectors?: SvdVectors
 }
 
 export interface SearchResponse {
@@ -54,6 +76,7 @@ export interface SearchResponse {
   results_without_svd?: PlayerStats[] | null
   svd_available?: boolean
   svd_latent_dimensions?: SvdLegendEntry[]
+  query_svd?: { top_activations: SvdActivationEntry[] }
 }
 
 export interface PlayerChatResult {

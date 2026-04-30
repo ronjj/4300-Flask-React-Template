@@ -188,6 +188,75 @@ def explain_latent_alignment(
     return {"positive_dimensions": pos_dims, "negative_dimensions": neg_dims}
 
 
+def top_latent_activations(
+    latent: np.ndarray,
+    bundle: dict[str, Any],
+    top_k: int = 8,
+) -> list[dict[str, Any]]:
+    """
+    Return the strongest latent activations by absolute value.
+
+    Each entry includes dim, activation, and a human label derived from loadings.
+    """
+    svd = bundle["svd"]
+    components: np.ndarray = svd.components_
+    feature_names: list[str] = bundle.get("feature_names", list(CANONICAL_FEATURE_COLUMNS))
+    vec = np.asarray(latent, dtype=float).ravel()
+    if vec.size == 0:
+        return []
+    order = np.argsort(np.abs(vec))[::-1]
+    out: list[dict[str, Any]] = []
+    for idx in order[: max(1, int(top_k))]:
+        d = int(idx)
+        label, label_detail = _dimension_human_label(components, feature_names, d)
+        out.append(
+            {
+                "dim": d,
+                "label": label,
+                "label_detail": label_detail,
+                "activation": float(vec[d]),
+            }
+        )
+    return out
+
+
+def top_latent_alignment(
+    query_latent: np.ndarray,
+    player_latent: np.ndarray,
+    bundle: dict[str, Any],
+    top_k: int = 8,
+) -> list[dict[str, Any]]:
+    """
+    Return top aligned dimensions for a (query, player) pair.
+
+    Each entry includes q, p, and product = q*p for the dimension, plus labels.
+    """
+    svd = bundle["svd"]
+    components: np.ndarray = svd.components_
+    feature_names: list[str] = bundle.get("feature_names", list(CANONICAL_FEATURE_COLUMNS))
+    q = np.asarray(query_latent, dtype=float).ravel()
+    p = np.asarray(player_latent, dtype=float).ravel()
+    if q.size == 0 or p.size == 0 or q.shape != p.shape:
+        return []
+    products = q * p
+    order = np.argsort(np.abs(products))[::-1]
+    out: list[dict[str, Any]] = []
+    for idx in order[: max(1, int(top_k))]:
+        d = int(idx)
+        label, label_detail = _dimension_human_label(components, feature_names, d)
+        out.append(
+            {
+                "dim": d,
+                "label": label,
+                "label_detail": label_detail,
+                "query_activation": float(q[d]),
+                "player_activation": float(p[d]),
+                "contribution": float(products[d]),
+            }
+        )
+    return out
+
+
 def rank_raw_vs_svd(
     prototype: np.ndarray,
     candidate_matrix: np.ndarray,
