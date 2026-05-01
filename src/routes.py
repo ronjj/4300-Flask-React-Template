@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover - package-style import fallback
 
 USE_LLM = True
 
+
 def register_routes(app):
     register_player_chat_route(app)
 
