@@ -457,9 +457,51 @@ function App(): JSX.Element {
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
-                  <AnimatePresence>
-                    {statusText && (
+                  <AnimatePresence mode="wait">
+                    {status === "loading" ? (
+                      <motion.div
+                        key="footy-loader"
+                        className="footy-loader-wrap"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -12, scale: 0.96 }}
+                        transition={{ duration: 0.22, ease: "easeOut" }}
+                      >
+                        <div className="footy-radar" aria-hidden="true">
+                          <div className="footy-radar__ring footy-radar__ring--1" />
+                          <div className="footy-radar__ring footy-radar__ring--2" />
+                          <div className="footy-radar__ring footy-radar__ring--3" />
+                          <div className="footy-ball-track">
+                            <div className="footy-ball">
+                              <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" className="footy-ball__svg" aria-hidden="true">
+                                <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#1a1a1a" strokeWidth="3" />
+                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" />
+                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(72 50 50)" />
+                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(144 50 50)" />
+                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(216 50 50)" />
+                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(288 50 50)" />
+                                <circle cx="50" cy="50" r="48" fill="none" stroke="#1a1a1a" strokeWidth="3" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="footy-field-arc footy-field-arc--top" aria-hidden="true" />
+                          <div className="footy-field-arc footy-field-arc--bottom" aria-hidden="true" />
+                        </div>
+                        <div className="footy-loader-label" aria-live="polite">
+                          <span className="footy-loader-label__word">SCOUTING</span>
+                          <span className="footy-loader-label__dots">
+                            <span className="footy-loader-label__dot" />
+                            <span className="footy-loader-label__dot" />
+                            <span className="footy-loader-label__dot" />
+                          </span>
+                        </div>
+                        <div className="footy-loader-bar" aria-hidden="true">
+                          <div className="footy-loader-bar__fill" />
+                        </div>
+                      </motion.div>
+                    ) : statusText ? (
                       <motion.p
+                        key="search-feedback"
                         className="search-feedback"
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -468,7 +510,7 @@ function App(): JSX.Element {
                       >
                         {statusText}
                       </motion.p>
-                    )}
+                    ) : null}
                   </AnimatePresence>
 
                   <AnimatePresence>
