@@ -71,6 +71,11 @@ export interface PlayerStats {
   svd_vectors?: SvdVectors
 }
 
+export interface HeatmapData {
+  features: string[]
+  players: { name: string; scores: number[]; raw: number[] }[]
+}
+
 export interface SearchResponse {
   mode?: string
   results: PlayerStats[]
@@ -79,6 +84,7 @@ export interface SearchResponse {
   svd_available?: boolean
   svd_latent_dimensions?: SvdLegendEntry[]
   query_svd?: { top_activations: SvdActivationEntry[] }
+  heatmap?: HeatmapData | null
 }
 
 export interface PlayerChatResult {

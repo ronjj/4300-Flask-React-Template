@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useScroll, useTransform } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useScroll,
+  useTransform,
+} from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 import Logo from "./components/Logo";
 import SearchBar from "./components/SearchBar";
 import PlayerGrid from "./components/PlayerGrid";
-import { PlayerCardData, PlayerChatResponse, PlayerStats, SearchResponse } from "./types";
+import {
+  HeatmapData,
+  PlayerCardData,
+  PlayerChatResponse,
+  PlayerStats,
+  SearchResponse,
+} from "./types";
 import POPULAR_PLAYERS from "./data/popularPlayers";
 import PlayerProfile from "./components/PlayerProfile";
+import SimilarityHeatmap from "./components/SimilarityHeatmap";
 import searchSvg from "./assets/search.svg";
 import soccerballSvg from "./assets/soccerball.svg";
 import compassSvg from "./assets/compass.svg";
@@ -23,7 +35,11 @@ const EXAMPLE_QUERIES = [
   "prolific wingers from Africa",
 ];
 
-function QueryCarousel({ onSelect }: { onSelect: (q: string) => void }): JSX.Element {
+function QueryCarousel({
+  onSelect,
+}: {
+  onSelect: (q: string) => void;
+}): JSX.Element {
   const trackRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number | null>(null);
   const posRef = useRef(0);
@@ -109,6 +125,7 @@ function App(): JSX.Element {
     evidence?: import("./types").PlayerChatEvidence[];
     warnings?: string[];
   } | null>(null);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [playersSvd, setPlayersSvd] = useState<PlayerCardData[]>([]);
@@ -117,7 +134,9 @@ function App(): JSX.Element {
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searchMode, setSearchMode] = useState<SearchMode>(null);
   const [heroMode, setHeroMode] = useState<boolean>(false);
-  const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerCardData | null>(
+    null,
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const spotlightRef = useRef<HTMLElement>(null);
@@ -129,8 +148,7 @@ function App(): JSX.Element {
         if (!response.ok) return;
         const data: { use_llm?: boolean } = await response.json();
         setUseLlm(Boolean(data.use_llm));
-      } catch {
-      }
+      } catch {}
     };
     void loadConfig();
   }, []);
@@ -147,16 +165,23 @@ function App(): JSX.Element {
   }, [heroMode, selectedPlayer]);
 
   useEffect(() => {
-    document.body.style.overflow = (heroMode || selectedPlayer !== null) ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    document.body.style.overflow =
+      heroMode || selectedPlayer !== null ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [heroMode, selectedPlayer]);
 
   const { scrollY } = useScroll();
   const vh = window.innerHeight;
-  const heroLogoScale   = useTransform(scrollY, [0, vh * 0.65], [1, 0.26]);
+  const heroLogoScale = useTransform(scrollY, [0, vh * 0.65], [1, 0.26]);
   const heroLogoOpacity = useTransform(scrollY, [vh * 0.38, vh * 0.65], [1, 0]);
-  const heroLogoX       = useTransform(scrollY, [0, vh * 0.65], [0, -70]);
-  const headerLogoOpacity = useTransform(scrollY, [vh * 0.5, vh * 0.85], [0, 1]);
+  const heroLogoX = useTransform(scrollY, [0, vh * 0.65], [0, -70]);
+  const headerLogoOpacity = useTransform(
+    scrollY,
+    [vh * 0.5, vh * 0.85],
+    [0, 1],
+  );
 
   useEffect(() => {
     const el = spotlightRef.current;
@@ -198,10 +223,13 @@ function App(): JSX.Element {
     setSearchMode(null);
     setAiAnswer(null);
     setAiMeta(null);
+    setHeatmapData(null);
     setSvdAvailable(false);
     setShowSvdRanking(false);
     try {
-      const response = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`);
+      const response = await fetch(
+        `${API_BASE}/api/search?q=${encodeURIComponent(trimmed)}`,
+      );
       if (!response.ok) {
         setPlayers([]);
         setPlayersSvd([]);
@@ -213,15 +241,23 @@ function App(): JSX.Element {
       const data: SearchResponse = await response.json();
       const standardResults = Array.isArray(data.results_without_svd)
         ? (data.results_without_svd as PlayerStats[])
-        : (Array.isArray(data.results) ? data.results : []);
-      const svdResults = Array.isArray(data.results_svd) ? (data.results_svd as PlayerStats[]) : [];
+        : Array.isArray(data.results)
+          ? data.results
+          : [];
+      const svdResults = Array.isArray(data.results_svd)
+        ? (data.results_svd as PlayerStats[])
+        : [];
 
       // Build rank-delta map: name → (rank_without_svd − rank_with_svd)
       // positive = SVD moved the player higher in the list
       const rankDeltaMap = new Map<string, number>();
-      if (data.svd_available && standardResults.length > 0 && svdResults.length > 0) {
+      if (
+        data.svd_available &&
+        standardResults.length > 0 &&
+        svdResults.length > 0
+      ) {
         const withoutRanks = new Map(
-          standardResults.map((p, i) => [p.name, i])
+          standardResults.map((p, i) => [p.name, i]),
         );
         svdResults.forEach((player, svdIdx) => {
           const withoutIdx = withoutRanks.get(player.name);
@@ -234,16 +270,17 @@ function App(): JSX.Element {
       const nextPlayers = toCardData(standardResults).map((card) =>
         rankDeltaMap.has(card.name)
           ? { ...card, svdRankDelta: rankDeltaMap.get(card.name)! }
-          : card
+          : card,
       );
       setPlayers(nextPlayers);
+      setHeatmapData(data.heatmap ?? null);
       const hasSvd = Boolean(data.svd_available && svdResults.length > 0);
       setSvdAvailable(hasSvd);
       if (hasSvd) {
         const svdCards = toCardData(svdResults).map((card) =>
           rankDeltaMap.has(card.name)
             ? { ...card, svdRankDelta: rankDeltaMap.get(card.name)! }
-            : card
+            : card,
         );
         setPlayersSvd(svdCards);
       } else {
@@ -305,7 +342,11 @@ function App(): JSX.Element {
   const activeFetchId = useRef(0);
 
   const normalizeName = (s: string): string =>
-    s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+    s
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .trim();
 
   const handleFullStatsClick = (player: PlayerCardData): void => {
     setSelectedPlayer(player);
@@ -315,31 +356,44 @@ function App(): JSX.Element {
 
     void (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(player.name)}`);
+        const res = await fetch(
+          `${API_BASE}/api/search?q=${encodeURIComponent(player.name)}`,
+        );
         if (!res.ok || id !== activeFetchId.current) return;
         const data: SearchResponse = await res.json();
         if (id !== activeFetchId.current) return;
         if (!Array.isArray(data.results) || data.results.length === 0) return;
 
         const lastName = normalizeName(player.name.split(" ").pop()!);
-        const match = data.results.find((r: PlayerStats) => normalizeName(r.name).includes(lastName));
+        const match = data.results.find((r: PlayerStats) =>
+          normalizeName(r.name).includes(lastName),
+        );
         if (!match) return;
 
         const enriched = toCardData([match])[0];
         setSelectedPlayer((prev) =>
           prev?.key === player.key
-            ? { ...prev, fullStats: enriched.fullStats, image: enriched.image ?? prev.image }
-            : prev
+            ? {
+                ...prev,
+                fullStats: enriched.fullStats,
+                image: enriched.image ?? prev.image,
+              }
+            : prev,
         );
       } catch {}
     })();
   };
 
   const shellMode = useMemo<"home" | "results">(() => {
-    if (players.length > 0 || status === "loading" || status === "empty" || status === "error") return "results";
+    if (
+      players.length > 0 ||
+      status === "loading" ||
+      status === "empty" ||
+      status === "error"
+    )
+      return "results";
     return "home";
   }, [players.length, status]);
-
 
   const statusText =
     status === "loading"
@@ -400,13 +454,20 @@ function App(): JSX.Element {
                     <SearchBar
                       value={searchTerm}
                       inputRef={searchInputRef}
-                      onFocus={() => { scrollToShell(); setHeroMode(true); }}
+                      onFocus={() => {
+                        scrollToShell();
+                        setHeroMode(true);
+                      }}
                       onChange={handleSearchChange}
-                      onSubmit={() => aiMode ? void runAiSearch(searchTerm) : void runSearch(searchTerm)}
+                      onSubmit={() =>
+                        aiMode
+                          ? void runAiSearch(searchTerm)
+                          : void runSearch(searchTerm)
+                      }
                       placeholder="look up the best Brazilian wingers..."
                       showAiToggle={useLlm}
                       aiMode={aiMode}
-                      onAiToggle={() => setAiMode(m => !m)}
+                      onAiToggle={() => setAiMode((m) => !m)}
                     />
                   </motion.div>
                 ) : (
@@ -428,25 +489,49 @@ function App(): JSX.Element {
                 >
                   <div className="feature-tiles">
                     <div className="feature-tile">
-                      <img src={searchSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <img
+                        src={searchSvg}
+                        alt=""
+                        aria-hidden="true"
+                        className="tile-icon"
+                      />
                       <h3 className="tile-title">Search</h3>
-                      <p className="tile-subtitle">Type a player name or describe what you're looking for</p>
+                      <p className="tile-subtitle">
+                        Type a player name or describe what you're looking for
+                      </p>
                     </div>
                     <div className="feature-tile">
-                      <img src={soccerballSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <img
+                        src={soccerballSvg}
+                        alt=""
+                        aria-hidden="true"
+                        className="tile-icon"
+                      />
                       <h3 className="tile-title">Discover</h3>
-                      <p className="tile-subtitle">Get ranked results with key stats</p>
+                      <p className="tile-subtitle">
+                        Get ranked results with key stats
+                      </p>
                     </div>
                     <div className="feature-tile">
-                      <img src={compassSvg} alt="" aria-hidden="true" className="tile-icon" />
+                      <img
+                        src={compassSvg}
+                        alt=""
+                        aria-hidden="true"
+                        className="tile-icon"
+                      />
                       <h3 className="tile-title">Explore</h3>
-                      <p className="tile-subtitle">Dive into full player profiles</p>
+                      <p className="tile-subtitle">
+                        Dive into full player profiles
+                      </p>
                     </div>
                   </div>
 
                   <div className="popular-section">
                     <h2 className="section-title">Popular Players</h2>
-                    <PlayerGrid players={POPULAR_PLAYERS} onFullStatsClick={handleFullStatsClick} />
+                    <PlayerGrid
+                      players={POPULAR_PLAYERS}
+                      onFullStatsClick={handleFullStatsClick}
+                    />
                   </div>
                 </motion.div>
               ) : (
@@ -473,22 +558,68 @@ function App(): JSX.Element {
                           <div className="footy-radar__ring footy-radar__ring--3" />
                           <div className="footy-ball-track">
                             <div className="footy-ball">
-                              <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" className="footy-ball__svg" aria-hidden="true">
-                                <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#1a1a1a" strokeWidth="3" />
-                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" />
-                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(72 50 50)" />
-                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(144 50 50)" />
-                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(216 50 50)" />
-                                <polygon points="50,22 64,33 58,50 42,50 36,33" fill="#1a1a1a" transform="rotate(288 50 50)" />
-                                <circle cx="50" cy="50" r="48" fill="none" stroke="#1a1a1a" strokeWidth="3" />
+                              <svg
+                                viewBox="0 0 100 100"
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="footy-ball__svg"
+                                aria-hidden="true"
+                              >
+                                <circle
+                                  cx="50"
+                                  cy="50"
+                                  r="48"
+                                  fill="#ffffff"
+                                  stroke="#1a1a1a"
+                                  strokeWidth="3"
+                                />
+                                <polygon
+                                  points="50,22 64,33 58,50 42,50 36,33"
+                                  fill="#1a1a1a"
+                                />
+                                <polygon
+                                  points="50,22 64,33 58,50 42,50 36,33"
+                                  fill="#1a1a1a"
+                                  transform="rotate(72 50 50)"
+                                />
+                                <polygon
+                                  points="50,22 64,33 58,50 42,50 36,33"
+                                  fill="#1a1a1a"
+                                  transform="rotate(144 50 50)"
+                                />
+                                <polygon
+                                  points="50,22 64,33 58,50 42,50 36,33"
+                                  fill="#1a1a1a"
+                                  transform="rotate(216 50 50)"
+                                />
+                                <polygon
+                                  points="50,22 64,33 58,50 42,50 36,33"
+                                  fill="#1a1a1a"
+                                  transform="rotate(288 50 50)"
+                                />
+                                <circle
+                                  cx="50"
+                                  cy="50"
+                                  r="48"
+                                  fill="none"
+                                  stroke="#1a1a1a"
+                                  strokeWidth="3"
+                                />
                               </svg>
                             </div>
                           </div>
-                          <div className="footy-field-arc footy-field-arc--top" aria-hidden="true" />
-                          <div className="footy-field-arc footy-field-arc--bottom" aria-hidden="true" />
+                          <div
+                            className="footy-field-arc footy-field-arc--top"
+                            aria-hidden="true"
+                          />
+                          <div
+                            className="footy-field-arc footy-field-arc--bottom"
+                            aria-hidden="true"
+                          />
                         </div>
                         <div className="footy-loader-label" aria-live="polite">
-                          <span className="footy-loader-label__word">SCOUTING</span>
+                          <span className="footy-loader-label__word">
+                            SCOUTING
+                          </span>
                           <span className="footy-loader-label__dots">
                             <span className="footy-loader-label__dot" />
                             <span className="footy-loader-label__dot" />
@@ -524,30 +655,42 @@ function App(): JSX.Element {
                       >
                         <span className="ai-answer-icon">✦</span>
                         <div className="ai-answer-body">
+                          {aiMeta?.rewrittenQuery && (
+                            <div className="query-expansion-banner">
+                              <span className="query-expansion-label">
+                                LLM-EDITED QUERY
+                              </span>
+                              <span className="query-expansion-text">
+                                {aiMeta.rewrittenQuery}
+                              </span>
+                            </div>
+                          )}
                           <div className="ai-answer-text">
                             <ReactMarkdown>{aiAnswer}</ReactMarkdown>
                           </div>
                           {aiMeta && (
                             <div className="ai-answer-meta">
-                              {aiMeta.rewrittenQuery && (
-                                <div className="ai-meta-block">
-                                  <span className="ai-meta-title">IR query</span>
-                                  <span className="ai-meta-line">{aiMeta.rewrittenQuery}</span>
-                                </div>
-                              )}
                               {aiMeta.retrievalConfidence != null && (
                                 <div className="ai-meta-block">
-                                  <span className="ai-meta-title">Retrieval confidence</span>
-                                  <span className="ai-meta-line">{aiMeta.retrievalConfidence.toFixed(3)}</span>
+                                  <span className="ai-meta-title">
+                                    Retrieval confidence
+                                  </span>
+                                  <span className="ai-meta-line">
+                                    {aiMeta.retrievalConfidence.toFixed(3)}
+                                  </span>
                                 </div>
                               )}
                               {(aiMeta.results?.length ?? 0) > 0 && (
                                 <div className="ai-meta-block">
-                                  <span className="ai-meta-title">Top results</span>
+                                  <span className="ai-meta-title">
+                                    Top results
+                                  </span>
                                   <ul className="ai-meta-list">
                                     {aiMeta.results?.slice(0, 3).map((r, i) => (
                                       <li key={`${r.player_name ?? "r"}-${i}`}>
-                                        {[r.player_name, r.team].filter(Boolean).join(" · ") || "Unnamed player"}
+                                        {[r.player_name, r.team]
+                                          .filter(Boolean)
+                                          .join(" · ") || "Unnamed player"}
                                       </li>
                                     ))}
                                   </ul>
@@ -555,39 +698,59 @@ function App(): JSX.Element {
                               )}
                               {(aiMeta.evidence?.length ?? 0) > 0 && (
                                 <div className="ai-meta-block">
-                                  <span className="ai-meta-title">Retrieved evidence</span>
+                                  <span className="ai-meta-title">
+                                    Retrieved evidence
+                                  </span>
                                   <ul className="ai-meta-list">
-                                    {aiMeta.evidence?.slice(0, 3).map((item, i) => {
-                                      const details = [
-                                        item.player_name,
-                                        item.team,
-                                        item.season_label,
-                                        typeof item.retrieval_score === "number"
-                                          ? `score ${item.retrieval_score.toFixed(3)}`
-                                          : null,
-                                      ].filter(Boolean).join(" · ");
-                                      const stats = item.key_stats
-                                        ? Object.entries(item.key_stats)
-                                            .filter(([, v]) => v != null)
-                                            .slice(0, 3)
-                                            .map(([k, v]) => `${k.replace(/_/g, " ")}: ${String(v)}`)
-                                            .join(" | ")
-                                        : null;
-                                      return (
-                                        <li key={`${item.player_name ?? "e"}-${i}`}>
-                                          <div>{details}</div>
-                                          {stats && <div className="ai-meta-stats">{stats}</div>}
-                                        </li>
-                                      );
-                                    })}
+                                    {aiMeta.evidence
+                                      ?.slice(0, 3)
+                                      .map((item, i) => {
+                                        const details = [
+                                          item.player_name,
+                                          item.team,
+                                          item.season_label,
+                                          typeof item.retrieval_score ===
+                                          "number"
+                                            ? `score ${item.retrieval_score.toFixed(3)}`
+                                            : null,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" · ");
+                                        const stats = item.key_stats
+                                          ? Object.entries(item.key_stats)
+                                              .filter(([, v]) => v != null)
+                                              .slice(0, 3)
+                                              .map(
+                                                ([k, v]) =>
+                                                  `${k.replace(/_/g, " ")}: ${String(v)}`,
+                                              )
+                                              .join(" | ")
+                                          : null;
+                                        return (
+                                          <li
+                                            key={`${item.player_name ?? "e"}-${i}`}
+                                          >
+                                            <div>{details}</div>
+                                            {stats && (
+                                              <div className="ai-meta-stats">
+                                                {stats}
+                                              </div>
+                                            )}
+                                          </li>
+                                        );
+                                      })}
                                   </ul>
                                 </div>
                               )}
                               {(aiMeta.warnings?.length ?? 0) > 0 && (
                                 <div className="ai-meta-block">
-                                  <span className="ai-meta-title">Warnings</span>
+                                  <span className="ai-meta-title">
+                                    Warnings
+                                  </span>
                                   <ul className="ai-meta-list">
-                                    {aiMeta.warnings?.map((w, i) => <li key={i}>{w}</li>)}
+                                    {aiMeta.warnings?.map((w, i) => (
+                                      <li key={i}>{w}</li>
+                                    ))}
                                   </ul>
                                 </div>
                               )}
@@ -599,20 +762,25 @@ function App(): JSX.Element {
                   </AnimatePresence>
 
                   <AnimatePresence>
-                    {searchMode?.toLowerCase().includes("svd") && status === "populated" && (
-                      <motion.div
-                        className="svd-badge"
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.26, ease: "easeOut" }}
-                      >
-                        <span className="svd-badge-icon">✦</span>
-                        <span className="svd-badge-label">Query upgraded</span>
-                        <span className="svd-badge-sep">·</span>
-                        <span className="svd-badge-desc">SVD enhanced matching</span>
-                      </motion.div>
-                    )}
+                    {searchMode?.toLowerCase().includes("svd") &&
+                      status === "populated" && (
+                        <motion.div
+                          className="svd-badge"
+                          initial={{ opacity: 0, y: -8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.26, ease: "easeOut" }}
+                        >
+                          <span className="svd-badge-icon">✦</span>
+                          <span className="svd-badge-label">
+                            Query upgraded
+                          </span>
+                          <span className="svd-badge-sep">·</span>
+                          <span className="svd-badge-desc">
+                            SVD enhanced matching
+                          </span>
+                        </motion.div>
+                      )}
                   </AnimatePresence>
 
                   {svdAvailable && status === "populated" && (
@@ -635,8 +803,21 @@ function App(): JSX.Element {
                     </div>
                   )}
 
+                  <AnimatePresence>
+                    {heatmapData && status === "populated" && (
+                      <SimilarityHeatmap
+                        features={heatmapData.features}
+                        players={heatmapData.players}
+                      />
+                    )}
+                  </AnimatePresence>
+
                   <PlayerGrid
-                    players={showSvdRanking && playersSvd.length > 0 ? playersSvd : players}
+                    players={
+                      showSvdRanking && playersSvd.length > 0
+                        ? playersSvd
+                        : players
+                    }
                     onFullStatsClick={handleFullStatsClick}
                     showSvdControls={svdAvailable}
                   />
@@ -656,7 +837,10 @@ function App(): JSX.Element {
               transition={{ duration: 0.22, ease: "easeOut" }}
               onClick={() => setHeroMode(false)}
             >
-              <div className="hero-overlay-inner" onClick={(e) => e.stopPropagation()}>
+              <div
+                className="hero-overlay-inner"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <motion.div
                   className="hero-logo-wrapper"
                   initial={{ opacity: 0, scale: 0.88 }}
@@ -674,12 +858,14 @@ function App(): JSX.Element {
                     onChange={handleSearchChange}
                     onSubmit={() => {
                       setHeroMode(false);
-                      aiMode ? void runAiSearch(searchTerm) : void runSearch(searchTerm);
+                      aiMode
+                        ? void runAiSearch(searchTerm)
+                        : void runSearch(searchTerm);
                     }}
                     placeholder="look up the best Brazilian wingers..."
                     showAiToggle={useLlm}
                     aiMode={aiMode}
-                    onAiToggle={() => setAiMode(m => !m)}
+                    onAiToggle={() => setAiMode((m) => !m)}
                   />
                 </motion.div>
 
@@ -689,18 +875,23 @@ function App(): JSX.Element {
                   exit={{ opacity: 0, y: 8 }}
                   transition={{ duration: 0.26, delay: 0.16, ease: "easeOut" }}
                 >
-                  <QueryCarousel onSelect={(q) => {
-                    setSearchTerm(q);
-                    setHeroMode(false);
-                    void runSearch(q);
-                  }} />
+                  <QueryCarousel
+                    onSelect={(q) => {
+                      setSearchTerm(q);
+                      setHeroMode(false);
+                      void runSearch(q);
+                    }}
+                  />
                 </motion.div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <PlayerProfile player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
+        <PlayerProfile
+          player={selectedPlayer}
+          onClose={() => setSelectedPlayer(null)}
+        />
       </div>
     </>
   );

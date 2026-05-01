@@ -151,6 +151,62 @@ def _extract_similarity_target(query: str) -> str | None:
     return None
 
 
+_HEATMAP_FEATURES = [
+    "goals", "assists", "shots_on_target", "progressive_passes",
+    "key_passes", "dribbles_completed", "tackles", "interceptions", "appearances",
+]
+
+
+def _safe_float_local(value: Any) -> float:
+    try:
+        v = float(value)
+        return 0.0 if (v != v or v == float("inf") or v == float("-inf")) else v
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _compute_heatmap(player_names: list[str]) -> Dict[str, Any] | None:
+    name_set = {normalize_text(n) for n in player_names}
+    rows = {
+        normalize_text(r["name"]): r
+        for r in PLAYER_INDEX.get("player_list", [])
+        if normalize_text(r.get("name", "")) in name_set
+    }
+    if not rows:
+        return None
+    matrix: Dict[str, list[float]] = {}
+    for name in player_names:
+        row = rows.get(normalize_text(name))
+        if not row:
+            continue
+        sf = row.get("stat_features") or {}
+        matrix[name] = [_safe_float_local(sf.get(f)) for f in _HEATMAP_FEATURES]
+    if not matrix:
+        return None
+    vals = list(matrix.values())
+    mins = [min(r[i] for r in vals) for i in range(len(_HEATMAP_FEATURES))]
+    maxs = [max(r[i] for r in vals) for i in range(len(_HEATMAP_FEATURES))]
+    players_out = []
+    for name in player_names:
+        raw = matrix.get(name)
+        if raw is None:
+            continue
+        scores = [
+            float((v - mins[i]) / (maxs[i] - mins[i])) if maxs[i] > mins[i] else 0.0
+            for i, v in enumerate(raw)
+        ]
+        raw_vals = [round(raw[i], 1) for i in range(len(_HEATMAP_FEATURES))]
+        players_out.append({"name": name, "scores": scores, "raw": raw_vals})
+    return {"features": _HEATMAP_FEATURES, "players": players_out}
+
+
+def _inject_heatmap(response: Dict[str, Any]) -> Dict[str, Any]:
+    results = response.get("results_without_svd") or response.get("results") or []
+    names = [r["name"] for r in results[:10] if r.get("name")]
+    response["heatmap"] = _compute_heatmap(names)
+    return response
+
+
 def _is_description_similarity_query(query: str) -> bool:
     normalized = query.casefold()
     return any(hint in normalized for hint in DESCRIPTION_HINTS) and not any(
@@ -410,6 +466,10 @@ def _dual_semantic_search(
 
 def search_players(query: str) -> Dict[str, Any]:
     """Route a search query to boolean or embedding-backed search."""
+    return _inject_heatmap(_search_players_inner(query))
+
+
+def _search_players_inner(query: str) -> Dict[str, Any]:
     semantic_target = _extract_similarity_target(query)
     embedding_bundle = _load_embeddings_bundle()
 
