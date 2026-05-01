@@ -804,7 +804,7 @@ function App(): JSX.Element {
                   )}
 
                   <AnimatePresence>
-                    {heatmapData && status === "populated" && (
+                    {heatmapData && status === "populated" && !showSvdRanking && (
                       <SimilarityHeatmap
                         features={heatmapData.features}
                         players={heatmapData.players}
