@@ -136,14 +136,8 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
             <p>{msg.text}</p>
             {!msg.isUser && (
               <>
-                {(msg.rewrittenQuery != null || msg.retrievalConfidence != null || (msg.results?.length ?? 0) > 0 || (msg.evidence?.length ?? 0) > 0 || (msg.warnings?.length ?? 0) > 0) && (
+                {(msg.retrievalConfidence != null || (msg.results?.length ?? 0) > 0 || (msg.evidence?.length ?? 0) > 0 || (msg.warnings?.length ?? 0) > 0) && (
                   <div className="chat-meta">
-                    {msg.rewrittenQuery && (
-                      <div className="chat-meta-block">
-                        <p className="chat-meta-title">IR query</p>
-                        <p className="chat-meta-line">{msg.rewrittenQuery}</p>
-                      </div>
-                    )}
                     {msg.retrievalConfidence != null && (
                       <p className="chat-meta-line">
                         Retrieval confidence: {msg.retrievalConfidence.toFixed(3)}
