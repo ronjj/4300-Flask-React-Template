@@ -638,6 +638,7 @@ function App(): JSX.Element {
                   <PlayerGrid
                     players={showSvdRanking && playersSvd.length > 0 ? playersSvd : players}
                     onFullStatsClick={handleFullStatsClick}
+                    showSvdControls={svdAvailable}
                   />
                 </motion.div>
               )}

@@ -3,6 +3,7 @@ import { PlayerCardData, SvdActivationEntry, SvdAlignmentEntry } from "../types"
 type PlayerCardProps = {
   data: PlayerCardData;
   onFullStatsClick?: (player: PlayerCardData) => void;
+  showSvdControls?: boolean;
 };
 const fallbackImage =
   "https://resources.premierleague.com/premierleague25/photos/players/110x140/placeholder.png";
@@ -97,7 +98,7 @@ function aggregateAlignments(entries: SvdAlignmentEntry[]): SvdAlignmentEntry[] 
   return out;
 }
 
-function PlayerCard({ data, onFullStatsClick }: PlayerCardProps): JSX.Element {
+function PlayerCard({ data, onFullStatsClick, showSvdControls = false }: PlayerCardProps): JSX.Element {
   const [showSvd, setShowSvd] = useState(false);
 
   const svdVectors = data.fullStats?.svd_vectors;
@@ -166,7 +167,7 @@ function PlayerCard({ data, onFullStatsClick }: PlayerCardProps): JSX.Element {
           Full Stats
         </button>
 
-        {hasSvd && (
+        {hasSvd && showSvdControls && (
           <>
             <button
               type="button"

@@ -127,6 +127,12 @@ function Chat({ onSearchTerm }: ChatProps): JSX.Element {
       <div id="messages">
         {messages.map((msg, i) => (
           <div key={i} className={`message ${msg.isUser ? 'user' : 'assistant'}`}>
+            {!msg.isUser && msg.rewrittenQuery && (
+              <div className="query-expansion-banner">
+                <span className="query-expansion-label">INTERPRETED AS</span>
+                <span className="query-expansion-text">{msg.rewrittenQuery}</span>
+              </div>
+            )}
             <p>{msg.text}</p>
             {!msg.isUser && (
               <>

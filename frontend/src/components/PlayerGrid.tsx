@@ -5,6 +5,7 @@ import { PlayerCardData } from "../types";
 type PlayerGridProps = {
   players: PlayerCardData[];
   onFullStatsClick?: (player: PlayerCardData) => void;
+  showSvdControls?: boolean;
 };
 
 const container = {
@@ -26,7 +27,7 @@ const item = {
   },
 };
 
-function PlayerGrid({ players, onFullStatsClick }: PlayerGridProps): JSX.Element {
+function PlayerGrid({ players, onFullStatsClick, showSvdControls = false }: PlayerGridProps): JSX.Element {
   if (players.length === 0) {
     return <></>;
   }
@@ -45,6 +46,7 @@ function PlayerGrid({ players, onFullStatsClick }: PlayerGridProps): JSX.Element
           <PlayerCard
             data={player}
             onFullStatsClick={onFullStatsClick}
+            showSvdControls={showSvdControls}
           />
         </motion.div>
       ))}
